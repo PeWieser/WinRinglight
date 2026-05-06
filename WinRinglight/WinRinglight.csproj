@@ -8,6 +8,11 @@
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
 		<TargetPlatformIdentifier>Windows</TargetPlatformIdentifier>
+		<ApplicationIcon>icon.ico</ApplicationIcon>
 	</PropertyGroup>
+
+	<ItemGroup>
+	  <Resource Include="icon.ico" />
+	</ItemGroup>
 
 </Project>
