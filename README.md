@@ -27,7 +27,7 @@
 ## Requirements
 
 - Windows 10 or 11
-- .NET Framework 4.7.2 or higher
+- .NET Framework 10 or higher
 
 ---
 *Developed by Melo*
