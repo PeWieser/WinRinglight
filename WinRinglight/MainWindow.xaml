@@ -1,36 +1,16 @@
 ﻿<Window x:Class="WinRinglight.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="WinRinglight Overlay"
-        WindowStyle="None"
-        AllowsTransparency="True"
-        Background="Transparent"
-        Topmost="True"
-        ShowInTaskbar="False"
-        Icon="icon.ico">
+        Title="WinRinglight Overlay" WindowStyle="None" AllowsTransparency="True" 
+        Background="Transparent" Topmost="True" ShowInTaskbar="False" Icon="icon.ico">
 
-	<Grid x:Name="MainGrid">
-
-		<Grid.OpacityMask>
-			<RadialGradientBrush x:Name="CursorCutoutMask"
-                                 MappingMode="Absolute"
-                                 RadiusX="150" RadiusY="150"
-                                 Center="0,0" GradientOrigin="0,0">
-				<GradientStop Color="#00000000" Offset="0.0"/>
-				<GradientStop Color="#00000000" Offset="0.3"/>
-				<GradientStop Color="#FFFFFFFF" Offset="1.0"/>
-			</RadialGradientBrush>
-		</Grid.OpacityMask>
-
-		<Border x:Name="RinglightBorder"
-                BorderBrush="#FFF4E5"
-                BorderThickness="60"
-                CornerRadius="120"
-                Margin="20">
-			<Border.Effect>
-				<BlurEffect Radius="30" RenderingBias="Performance"/>
-			</Border.Effect>
-		</Border>
-
-	</Grid>
+    <Grid x:Name="MainGrid">
+        <Grid.OpacityMask>
+            <RadialGradientBrush x:Name="CursorCutoutMask" MappingMode="Absolute">
+                <GradientStop x:Name="StopInner" Color="#00000000" Offset="0.0"/>
+                <GradientStop x:Name="StopMiddle" Color="#00000000" Offset="0.5"/>
+                <GradientStop x:Name="StopOuter" Color="#FFFFFFFF" Offset="1.0"/>
+            </RadialGradientBrush>
+        </Grid.OpacityMask>
+    </Grid>
 </Window>

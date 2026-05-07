@@ -60,7 +60,7 @@
         </Style>
 
         <Style TargetType="Slider">
-            <Setter Property="IsMoveToPointEnabled" Value="True"/>
+            <Setter Property="IsMoveToPointEnabled" Value="False"/>
             <Setter Property="Margin" Value="0,5,0,5"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -74,7 +74,7 @@
                             <Border Grid.Row="1" Height="4" Background="{TemplateBinding Background}" CornerRadius="2" VerticalAlignment="Center" Margin="5,0"/>
                             <Track Grid.Row="1" x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="Slider.DecreaseLarge" Opacity="0"/>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Opacity="0" IsHitTestVisible="False"/>
                                 </Track.DecreaseRepeatButton>
                                 <Track.Thumb>
                                     <Thumb>
@@ -86,7 +86,7 @@
                                     </Thumb>
                                 </Track.Thumb>
                                 <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="Slider.IncreaseLarge" Opacity="0"/>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Opacity="0" IsHitTestVisible="False"/>
                                 </Track.IncreaseRepeatButton>
                             </Track>
                         </Grid>
@@ -113,6 +113,10 @@
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
                             <TextBlock x:Name="LblTemperature" Text="Farbtemperatur" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <CheckBox x:Name="ChkAutoTemp" Foreground="#E0E0E0" FontWeight="SemiBold" Margin="0,0,0,15"
+                                      Checked="ChkAutoTemp_Changed" Unchecked="ChkAutoTemp_Changed">
+                                <TextBlock x:Name="LblAutoTemp" Text="Automatisch an Tageszeit anpassen"/>
+                            </CheckBox>
                             <Grid>
                                 <Border Height="6" CornerRadius="3" Margin="8,0,8,0" VerticalAlignment="Center">
                                     <Border.Background>
@@ -136,7 +140,13 @@
                             </Grid>
                             <Grid Margin="0,5,0,0">
                                 <TextBlock x:Name="LblWarm" Text="Warm" HorizontalAlignment="Left" FontSize="11" Foreground="#AAAAAA"/>
-                                <TextBlock Text="4000K" HorizontalAlignment="Center" FontSize="10" Foreground="#666666"/>
+                                <Grid Margin="8,0,8,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2000*"/>
+                                        <ColumnDefinition Width="2500*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="(Neutral)" HorizontalAlignment="Right" FontSize="10" Foreground="#666666" Margin="0,0,-22,0"/>
+                                </Grid>
                                 <TextBlock x:Name="LblCold" Text="Kalt" HorizontalAlignment="Right" FontSize="11" Foreground="#AAAAAA"/>
                             </Grid>
                         </StackPanel>
@@ -160,10 +170,33 @@
 
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
-                            <TextBlock x:Name="LblMonitor" Text="Monitor auswählen" FontWeight="Bold" Margin="0,0,0,10"/>
-                            <ComboBox x:Name="ComboMonitor" SelectionChanged="ComboMonitor_SelectionChanged" 
-                          Background="#3D3D3D" Foreground="White" BorderBrush="#555" Padding="5">
-                            </ComboBox>
+                            <TextBlock x:Name="LblMonitor" Text="Monitor Selection" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                            <ItemsControl x:Name="MonitorItemsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Style="{StaticResource {x:Type ToggleButton}}" 
+                              Content="{Binding Number}" 
+                              IsChecked="{Binding IsSelected}"
+                              Width="40" Height="40" Margin="0,0,10,10"
+                              Checked="MonitorBox_Changed" Unchecked="MonitorBox_Changed">
+                                            <CheckBox.ToolTip>
+                                                <ToolTip Content="{Binding Info}"/>
+                                            </CheckBox.ToolTip>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <CheckBox x:Name="ChkSpanAll" Margin="0,10,0,0" Foreground="White" 
+                                      Checked="ChkSpanAll_Changed" Unchecked="ChkSpanAll_Changed">
+                                <TextBlock x:Name="LblSpanAll" Text="Über alle Monitore spannen"/>
+                            </CheckBox>
                         </StackPanel>
                     </Border>
 
@@ -210,27 +243,27 @@
                                 <TextBlock Text="Melo" Grid.Column="1" FontWeight="SemiBold" Margin="0,0,0,5"/>
 
                                 <TextBlock Text="Version:" Grid.Row="1" Foreground="#888" Margin="0,0,10,5"/>
-                                <TextBlock Text="1.0.4 Beta" Grid.Row="1" Grid.Column="1" Margin="0,0,0,5"/>
+                                <TextBlock Text="1.0.0" Grid.Row="1" Grid.Column="1" Margin="0,0,0,5"/>
 
                                 <TextBlock Text="GitHub:" Grid.Row="2" Foreground="#888" Margin="0,0,10,0"/>
                                 <TextBlock Grid.Row="2" Grid.Column="1">
-                        <Hyperlink x:Name="LinkGithub" RequestNavigate="LinkSupport_RequestNavigate">
-                            <Run Text="github.com/melo/WinRinglight"/>
-                        </Hyperlink>
+                                    <Hyperlink NavigateUri="https://github.com/pewieser/WinRinglight" RequestNavigate="LinkGithub_RequestNavigate">
+                                        <Run Text="github.com/pewieser/WinRinglight"/>
+                                    </Hyperlink>
                                 </TextBlock>
                             </Grid>
                         </StackPanel>
                     </Border>
 
                     <TextBlock HorizontalAlignment="Center" Margin="0,10,0,0">
-                        <Hyperlink x:Name="LinkSupport" RequestNavigate="LinkSupport_RequestNavigate" TextDecorations="None">
+                        <Hyperlink x:Name="LinkSupport" Click="LinkSupport_Click" TextDecorations="None">
                             <TextBlock x:Name="LblSupport" Text="Unterstütze dieses Projekt" Foreground="#66B2FF" FontWeight="SemiBold"/>
                         </Hyperlink>
                     </TextBlock>
 
                 </StackPanel>
             </TabItem>
-            
+
         </TabControl>
     </Grid>
 </Window>

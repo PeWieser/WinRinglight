@@ -6,19 +6,62 @@ using System.Text.Json;
 
 namespace WinRinglight
 {
+
+    // NEW: Data structure for persistent settings
+    public class SettingsData
+    {
+        public double Thickness { get; set; } = 60;
+        public double Temperature { get; set; } = 4000;
+        public bool AutoTemperature { get; set; } = false;
+        public int VisualStyleIndex { get; set; } = 0;
+        public bool IsSpanned { get; set; } = false;
+        // List of monitor indices that should show a ringlight
+        public List<int> SelectedMonitors { get; set; } = new List<int> { 0 };
+        public bool AutoWebcam { get; set; } = false;
+        public string HotkeyText { get; set; } = "Ctrl + Alt + R";
+        public string SupportUrl { get; set; } = "https://github.com/pewieser/WinRinglight";
+    }
+
     public static class Config
     {
+        public static SettingsData Current = new SettingsData();
+        private static string FilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+
         // --- Developer Settings (Fine-tuning) ---
-        public static double MaxBrightness = 1.0;
-        public static double MinBrightness = 0.0;
         public static double MaxTemperatureKelvin = 6500;
         public static double MinTemperatureKelvin = 2000;
-        public static double MaxRinglightWidthPercent = 0.05;
-        public static double MinRinglightWidthPercent = 0.005;
-        public static double CursorCutoutRadiusPercent = 0.01;
-        public static double CursorBlurRadiusPercent = 0.05;
-        // --- Feature Flags ---
-        public static bool AutoWebcamEnabled = false;
+
+        public static double MaxRinglightWidthPercent = 0.15;
+        public static double MinRinglightWidthPercent = 0.05;
+
+        public static double CursorCutoutRadiusPercent = 0.40;
+        public static double CursorBlurRadiusPercent = 0.80;
+
+        // --- Save Settings ---
+        public static void Save()
+        {
+            try
+            {
+                string json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(FilePath, json);
+            }
+            catch { /* Handle error silently or log */ }
+        }
+
+        // --- Load Settings ---
+        public static void Load()
+        {
+            try
+            {
+                if (File.Exists(FilePath))
+                {
+                    string json = File.ReadAllText(FilePath);
+                    var data = JsonSerializer.Deserialize<SettingsData>(json);
+                    if (data != null) Current = data;
+                }
+            }
+            catch { /* Fallback to defaults */ }
+        }
 
         // --- Localization Engine ---
         // Automatically detects the Windows system language (e.g., "de", "en", "fr")
@@ -130,6 +173,10 @@ namespace WinRinglight
             { "AllMonitors", new Dictionary<string, string> {
                 { "de", "Alle Monitore (Gespant)" },
                 { "en", "All Monitors (Spanned)" }
+            }},
+            { "AutoTemp", new Dictionary<string, string> {
+                { "de", "Automatisch an Tageszeit anpassen" },
+                { "en", "Auto-adjust to time of day" }
             }}
         };
     }
