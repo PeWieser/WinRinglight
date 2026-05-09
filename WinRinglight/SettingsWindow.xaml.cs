@@ -13,7 +13,8 @@ namespace WinRinglight
         public string AppVersion => Config.Current.Version;
 
         private MainWindow _mainWindow;
-        private const string REGISTRY_APP_NAME = "WinRinglightApp";
+        private const string REGISTRY_APP_NAME = "!00_WinRinglightApp";
+        private const string TASK_NAME = "WinRinglight_Autostart";
 
         private System.Windows.Threading.DispatcherTimer _updateTimer;
         private DateTime _lastRender = DateTime.MinValue;
@@ -279,34 +280,58 @@ namespace WinRinglight
         {
             if (!this.IsLoaded) return;
 
+            string? exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath)) return;
+
+            bool enable = ChkAutostart.IsChecked == true;
+
             try
             {
                 using (RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
                 {
                     if (key != null)
                     {
-                        if (ChkAutostart.IsChecked == true)
-                        {
-
-                            string? exePath = Environment.ProcessPath;
-                            if (!string.IsNullOrEmpty(exePath))
-                            {
-                                key.SetValue(REGISTRY_APP_NAME, $"\"{exePath}\"");
-                            }
-                        }
+                        if (enable)
+                            key.SetValue(REGISTRY_APP_NAME, $"\"{exePath}\"");
                         else
-                        {
                             key.DeleteValue(REGISTRY_APP_NAME, false);
-                        }
                     }
+                }
+
+                if (enable)
+                {
+                    string args = $"/create /tn \"{TASK_NAME}\" /tr \"\\\"{exePath}\\\"\" /sc onlogon /rl highest /f";
+                    //RunSchtasks(args);
+                }
+                else
+                {
+                    string args = $"/delete /tn \"{TASK_NAME}\" /f";
+                    //RunSchtasks(args);
                 }
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show("Fehler beim Ändern des Autostarts: " + ex.Message, "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                System.Windows.MessageBox.Show("Fehler beim Autostart. Bitte starte das Programm als Administrator.\n\nDetails: " + ex.Message, "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
             Config.Save();
         }
+
+        /*private void RunSchtasks(string arguments)
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "schtasks.exe",
+                Arguments = arguments,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            using (var process = Process.Start(processInfo))
+            {
+                process?.WaitForExit();
+            }
+        }*/
 
         private void ChkWebcam_Changed(object sender, RoutedEventArgs e)
         {

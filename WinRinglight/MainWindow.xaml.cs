@@ -64,7 +64,7 @@ namespace WinRinglight
             _mutex = new System.Threading.Mutex(true, "WinRinglight_SingleInstance", out createdNew);
             if (!createdNew)
             {
-                System.Windows.MessageBox.Show("Das Programm läuft bereits im Hintergrund! Bitte beende es über das Symbol unten rechts in der Taskleiste, bevor du es neu startest.", "WinRinglight läuft bereits", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                //System.Windows.MessageBox.Show("Das Programm läuft bereits im Hintergrund! Bitte beende es über das Symbol unten rechts in der Taskleiste, bevor du es neu startest.", "WinRinglight läuft bereits", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                 System.Windows.Application.Current.Shutdown();
                 return;
             }
@@ -110,7 +110,7 @@ namespace WinRinglight
 
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
 
-            var toggleItem = new System.Windows.Forms.ToolStripMenuItem("Toggle Light (On/Off)");
+            var toggleItem = new System.Windows.Forms.ToolStripMenuItem("Toggle ringlight");
             toggleItem.Click += (s, e) => { ToggleRinglight(); };
             contextMenu.Items.Add(toggleItem);
 
