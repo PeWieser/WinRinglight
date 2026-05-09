@@ -20,7 +20,7 @@ namespace WinRinglight
         public List<int> SelectedMonitors { get; set; } = new List<int> { 0 };
         public bool AutoWebcam { get; set; } = false;
         public string HotkeyText { get; set; } = "Ctrl + Alt + R";
-        public string SupportUrl { get; set; } = "https://github.com/pewieser/WinRinglight";
+        public string SupportUrl { get; } = "https://ko-fi.com/melo04";
     }
 
     public static class Config
