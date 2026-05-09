@@ -13,10 +13,22 @@ namespace WinRinglight
         private MainWindow _mainWindow;
         private const string REGISTRY_APP_NAME = "WinRinglightApp";
 
+        private System.Windows.Threading.DispatcherTimer _updateTimer;
+        private DateTime _lastRender = DateTime.MinValue;
+
         public SettingsWindow(MainWindow mainWindow)
         {
             InitializeComponent();
             _mainWindow = mainWindow;
+
+            _updateTimer = new System.Windows.Threading.DispatcherTimer();
+            _updateTimer.Interval = TimeSpan.FromMilliseconds(40);
+            _updateTimer.Tick += (s, e) =>
+            {
+                _updateTimer.Stop();
+
+                Config.Save();
+            };
 
             // Load texts from config
             TabAppearance.Header = Config.GetText("TabAppearance");
@@ -136,9 +148,14 @@ namespace WinRinglight
             if (_mainWindow == null || !this.IsLoaded) return;
             Config.Current.Thickness = SliderThickness.Value;
             Config.Current.Temperature = SliderTemperature.Value;
-            _mainWindow.ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
-            Config.Save();
-            SendLiveUpdate();
+
+            if ((DateTime.Now - _lastRender).TotalMilliseconds > 16)
+            {
+                SendLiveUpdate();
+                _lastRender = DateTime.Now;
+            }
+            _updateTimer.Stop();
+            _updateTimer.Start();
         }
 
         private bool _isSnapping = false;
@@ -154,7 +171,15 @@ namespace WinRinglight
                 SliderTemperature.Value = 4000;
                 _isSnapping = false;
             }
-            SendLiveUpdate();
+            Config.Current.Temperature = SliderTemperature.Value;
+
+            if ((DateTime.Now - _lastRender).TotalMilliseconds > 16)
+            {
+                SendLiveUpdate();
+                _lastRender = DateTime.Now;
+            }
+            _updateTimer.Stop();
+            _updateTimer.Start();
         }
 
         private void SendLiveUpdate()
@@ -297,6 +322,13 @@ namespace WinRinglight
         private void LinkSupport_Click(object sender, RoutedEventArgs e)
         {
             Process.Start(new ProcessStartInfo(Config.Current.SupportUrl) { UseShellExecute = true });
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            Config.Save();
+
+            base.OnClosed(e);
         }
     }
 }

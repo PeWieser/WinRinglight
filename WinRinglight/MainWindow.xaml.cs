@@ -28,6 +28,9 @@ namespace WinRinglight
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+        [DllImport("user32.dll")]
+        private static extern bool ScreenToClient(IntPtr hWnd, ref Win32Point lpPoint);
+
         [StructLayout(LayoutKind.Sequential)]
         internal struct Win32Point { public Int32 X; public Int32 Y; }
 
@@ -39,8 +42,7 @@ namespace WinRinglight
 
         private const int HOTKEY_ID = 9000;
 
-        private DispatcherTimer _renderTimer;
-        private DispatcherTimer _webcamTimer;
+        private DispatcherTimer? _webcamTimer;
         private System.Windows.Forms.NotifyIcon? _trayIcon;
 
         private bool _isRinglightOn = false;
@@ -59,6 +61,11 @@ namespace WinRinglight
 
             Config.Load();
             InitializeComponent();
+
+            Timeline.DesiredFrameRateProperty.OverrideMetadata(
+                typeof(Timeline),
+                new FrameworkPropertyMetadata { DefaultValue = 60 }
+            );
 
             this.Left = SystemParameters.VirtualScreenLeft;
             this.Top = SystemParameters.VirtualScreenTop;
@@ -127,6 +134,10 @@ namespace WinRinglight
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            MainGrid.IsHitTestVisible = false;
+            this.IsHitTestVisible = false;
+            RenderOptions.SetEdgeMode(MainGrid, EdgeMode.Aliased);
+
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             int extendedStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
             SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
@@ -140,7 +151,7 @@ namespace WinRinglight
 
             CompositionTarget.Rendering += OnRendering;
 
-            _webcamTimer.Start();
+            _webcamTimer?.Start();
         }
 
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -203,9 +214,10 @@ namespace WinRinglight
             DoubleAnimation fadeAnimation = new DoubleAnimation
             {
                 To = _isRinglightOn ? 1.0 : 0.0,
-                Duration = TimeSpan.FromSeconds(0.5),
+                Duration = TimeSpan.FromSeconds(0.4),
                 EasingFunction = new QuadraticEase() { EasingMode = EasingMode.EaseInOut }
             };
+            Timeline.SetDesiredFrameRate(fadeAnimation, 60);
 
             MainGrid.BeginAnimation(UIElement.OpacityProperty, fadeAnimation);
         }
@@ -223,7 +235,6 @@ namespace WinRinglight
             }
             if (Config.Current.AutoTemperature && _isRinglightOn)
             {
-                // Update wird erzwungen, die Methode holt sich den neuen Kelvin-Wert selbst
                 ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
             }
         }
@@ -231,19 +242,19 @@ namespace WinRinglight
         private void OnRendering(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
+            Win32Point pt = new Win32Point();
+            if (GetCursorPos(ref pt))
+            {
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                Win32Point localPt = pt;
+                ScreenToClient(hwnd, ref localPt);
 
-            if (PresentationSource.FromVisual(this) == null) return;
+                System.Windows.Point relMouse = new System.Windows.Point(localPt.X, localPt.Y);
 
-            Win32Point mousePosition = new Win32Point();
-            GetCursorPos(ref mousePosition);
-
-            System.Windows.Point relativeMouse = this.PointFromScreen(new System.Windows.Point(mousePosition.X, mousePosition.Y));
-
-            CursorCutoutMask.Center = relativeMouse;
-            CursorCutoutMask.GradientOrigin = relativeMouse;
+                CursorCutoutMask.Center = relMouse;
+                CursorCutoutMask.GradientOrigin = relMouse;
+            }
         }
-
-
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
@@ -262,7 +273,7 @@ namespace WinRinglight
                 else
                 {
                     border.Margin = new Thickness(baseRect.X, baseRect.Y, 0, 0);
-                    border.CornerRadius = new CornerRadius(Math.Max(6, Config.Current.Thickness));
+                    border.CornerRadius = new CornerRadius(3);
                     border.Width = baseRect.Width;
                     border.Height = baseRect.Height;
                 }
@@ -349,10 +360,14 @@ namespace WinRinglight
                 Margin = new Thickness(x, y, 0, 0),
                 Width = w,
                 Height = h,
+
+                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false },
+
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     ShadowDepth = 0,
-                    BlurRadius = Math.Max(1, h * Config.CursorBlurRadiusPercent),
+                    //BlurRadius = Math.Max(1, h * Config.CursorBlurRadiusPercent),
+                    BlurRadius = 15,
                     RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
                 }
             };
@@ -376,8 +391,8 @@ namespace WinRinglight
 
                 if (Config.Current.VisualStyleIndex != 0)
                 {
-                    border.CornerRadius = new CornerRadius(Math.Max(6, thickness));
-                    //border.CornerRadius = new CornerRadius(thickness * 0.3);
+                    //border.CornerRadius = new CornerRadius(Math.Max(1, thickness));
+                    border.CornerRadius = new CornerRadius(3);
                 }
 
                 double t = (kelvin - 2000) / 4500.0;
@@ -391,6 +406,7 @@ namespace WinRinglight
                 if (border.Effect is System.Windows.Media.Effects.DropShadowEffect glow)
                 {
                     glow.Color = lightColor;
+                    glow.BlurRadius = Math.Min(100, thickness * 0.6);
                 }
             }
 

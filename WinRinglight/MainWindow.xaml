@@ -6,7 +6,9 @@
 
     <Grid x:Name="MainGrid">
         <Grid.OpacityMask>
-            <RadialGradientBrush x:Name="CursorCutoutMask" MappingMode="Absolute">
+            <RadialGradientBrush x:Name="CursorCutoutMask" 
+                             MappingMode="Absolute" 
+                             SpreadMethod="Pad">
                 <GradientStop x:Name="StopInner" Color="#00000000" Offset="0.0"/>
                 <GradientStop x:Name="StopMiddle" Color="#00000000" Offset="0.5"/>
                 <GradientStop x:Name="StopOuter" Color="#FFFFFFFF" Offset="1.0"/>

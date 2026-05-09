@@ -157,8 +157,8 @@
                             <TextBlock x:Name="LblTheme" Text="Visuelles Design" FontWeight="Bold" Margin="0,0,0,10"/>
                             <ComboBox x:Name="ComboStyle" SelectionChanged="ComboStyle_SelectionChanged" 
                                       Background="#3D3D3D" Foreground="White" BorderBrush="#555" Padding="5">
-                                <ComboBoxItem Content="Apple Style (Squircle / Rounded)"/>
-                                <ComboBoxItem Content="Windows Style (Angular)"/>
+                                <ComboBoxItem Content="Squircle Style"/>
+                                <ComboBoxItem Content="Windows Style "/>
                             </ComboBox>
                         </StackPanel>
                     </Border>
