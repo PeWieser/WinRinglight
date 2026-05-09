@@ -243,8 +243,7 @@
                                 <TextBlock Text="Melo" Grid.Column="1" FontWeight="SemiBold" Margin="0,0,0,5"/>
 
                                 <TextBlock Text="Version:" Grid.Row="1" Foreground="#888" Margin="0,0,10,5"/>
-                                <TextBlock Text="1.0.0" Grid.Row="1" Grid.Column="1" Margin="0,0,0,5"/>
-
+                                <TextBlock Text="{Binding AppVersion}" Grid.Row="1" Grid.Column="1" Margin="0,0,0,5"/>
                                 <TextBlock Text="GitHub:" Grid.Row="2" Foreground="#888" Margin="0,0,10,0"/>
                                 <TextBlock Grid.Row="2" Grid.Column="1">
                                     <Hyperlink NavigateUri="https://github.com/pewieser/WinRinglight" RequestNavigate="LinkGithub_RequestNavigate">

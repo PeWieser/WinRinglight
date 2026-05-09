@@ -10,6 +10,8 @@ namespace WinRinglight
 {
     public partial class SettingsWindow : Window
     {
+        public string AppVersion => Config.Current.Version;
+
         private MainWindow _mainWindow;
         private const string REGISTRY_APP_NAME = "WinRinglightApp";
 
@@ -19,6 +21,7 @@ namespace WinRinglight
         public SettingsWindow(MainWindow mainWindow)
         {
             InitializeComponent();
+            this.DataContext = this;
             _mainWindow = mainWindow;
 
             _updateTimer = new System.Windows.Threading.DispatcherTimer();
@@ -284,9 +287,9 @@ namespace WinRinglight
                     {
                         if (ChkAutostart.IsChecked == true)
                         {
-                            // Null check for the process path to fix CS8602
-                            string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                            if (exePath != null)
+
+                            string? exePath = Environment.ProcessPath;
+                            if (!string.IsNullOrEmpty(exePath))
                             {
                                 key.SetValue(REGISTRY_APP_NAME, $"\"{exePath}\"");
                             }
@@ -300,7 +303,6 @@ namespace WinRinglight
             }
             catch (Exception ex)
             {
-                // Explicitly use System.Windows.MessageBox to fix CS0104
                 System.Windows.MessageBox.Show("Fehler beim Ändern des Autostarts: " + ex.Message, "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
             Config.Save();

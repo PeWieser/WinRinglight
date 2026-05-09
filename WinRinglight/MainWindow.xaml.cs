@@ -31,6 +31,10 @@ namespace WinRinglight
         [DllImport("user32.dll")]
         private static extern bool ScreenToClient(IntPtr hWnd, ref Win32Point lpPoint);
 
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetProcessWorkingSetSize(IntPtr process, UIntPtr minimumWorkingSetSize, UIntPtr maximumWorkingSetSize);
+
         [StructLayout(LayoutKind.Sequential)]
         internal struct Win32Point { public Int32 X; public Int32 Y; }
 
@@ -47,6 +51,12 @@ namespace WinRinglight
 
         private bool _isRinglightOn = false;
         private bool _lastWebcamState = false;
+
+        private int _lastMouseX = -1;
+        private int _lastMouseY = -1;
+        private DateTime _lastMaskUpdate = DateTime.MinValue;
+
+        private Win32Point _mousePt = new Win32Point();
 
         public MainWindow()
         {
@@ -136,7 +146,7 @@ namespace WinRinglight
         {
             MainGrid.IsHitTestVisible = false;
             this.IsHitTestVisible = false;
-            RenderOptions.SetEdgeMode(MainGrid, EdgeMode.Aliased);
+            //RenderOptions.SetEdgeMode(MainGrid, EdgeMode.Aliased);
 
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             int extendedStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
@@ -152,6 +162,18 @@ namespace WinRinglight
             CompositionTarget.Rendering += OnRendering;
 
             _webcamTimer?.Start();
+
+            FlushMemory();
+        }
+
+        public void FlushMemory()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                SetProcessWorkingSetSize(System.Diagnostics.Process.GetCurrentProcess().Handle, (UIntPtr)0xFFFFFFFF, (UIntPtr)0xFFFFFFFF);
+            }
         }
 
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -242,11 +264,19 @@ namespace WinRinglight
         private void OnRendering(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
-            Win32Point pt = new Win32Point();
-            if (GetCursorPos(ref pt))
+
+            if (GetCursorPos(ref _mousePt))
             {
+                if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
+
+                if ((DateTime.Now - _lastMaskUpdate).TotalMilliseconds < 16) return;    //change at most every ~16ms (60fps) to avoid excessive CPU usage
+                _lastMaskUpdate = DateTime.Now;
+
+                _lastMouseX = _mousePt.X;
+                _lastMouseY = _mousePt.Y;
+
                 IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                Win32Point localPt = pt;
+                Win32Point localPt = _mousePt;
                 ScreenToClient(hwnd, ref localPt);
 
                 System.Windows.Point relMouse = new System.Windows.Point(localPt.X, localPt.Y);
@@ -353,29 +383,41 @@ namespace WinRinglight
 
         private void AddRinglight(double x, double y, double w, double h)
         {
-            System.Windows.Controls.Border b = new System.Windows.Controls.Border
+            System.Windows.Controls.Border glowBorder = new System.Windows.Controls.Border
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
                 Margin = new Thickness(x, y, 0, 0),
                 Width = w,
                 Height = h,
+                Opacity = 0.55,
 
-                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false },
+                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false, RenderAtScale = 0.25 },
 
-                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                Effect = new System.Windows.Media.Effects.BlurEffect
                 {
-                    ShadowDepth = 0,
-                    //BlurRadius = Math.Max(1, h * Config.CursorBlurRadiusPercent),
-                    BlurRadius = 15,
+                    Radius = 15,
                     RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
                 }
             };
+            glowBorder.Tag = new Rect(x, y, w, h);
+            _activeBorders.Add(glowBorder);
+            MainGrid.Children.Add(glowBorder);
 
-            b.Tag = new Rect(x, y, w, h);
+            System.Windows.Controls.Border coreBorder = new System.Windows.Controls.Border
+            {
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                Margin = new Thickness(x, y, 0, 0),
+                Width = w,
+                Height = h
+            };
 
-            _activeBorders.Add(b);
-            MainGrid.Children.Add(b);
+            RenderOptions.SetEdgeMode(coreBorder, EdgeMode.Unspecified);
+
+            coreBorder.Tag = new Rect(x, y, w, h);
+            _activeBorders.Add(coreBorder);
+            MainGrid.Children.Add(coreBorder);
         }
 
         public void ApplySettingsLive(double brightness, double thickness, double kelvin)
@@ -403,10 +445,9 @@ namespace WinRinglight
                 System.Windows.Media.Color lightColor = System.Windows.Media.Color.FromRgb(r, g, b_col);
                 border.BorderBrush = new SolidColorBrush(lightColor);
 
-                if (border.Effect is System.Windows.Media.Effects.DropShadowEffect glow)
+                if (border.Effect is System.Windows.Media.Effects.BlurEffect blur)
                 {
-                    glow.Color = lightColor;
-                    glow.BlurRadius = Math.Min(100, thickness * 0.6);
+                    blur.Radius = Math.Min(40, thickness * 0.4);
                 }
             }
 
