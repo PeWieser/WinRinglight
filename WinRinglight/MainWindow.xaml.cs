@@ -33,7 +33,71 @@ namespace WinRinglight
 
         [DllImport("kernel32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
+
         private static extern bool SetProcessWorkingSetSize(IntPtr process, UIntPtr minimumWorkingSetSize, UIntPtr maximumWorkingSetSize);
+
+        [DllImport("user32.dll")]
+        public static extern uint SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+        public const uint WDA_NONE = 0x00000000;
+        public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011; // Win10 2004+ Feature
+
+        public enum QUERY_USER_NOTIFICATION_STATE
+        {
+            QUNS_NOT_PRESENT = 1,
+            QUNS_BUSY = 2,
+            QUNS_RUNNING_D3D_FULL_SCREEN = 3,
+            QUNS_PRESENTATION_MODE = 4,
+            QUNS_ACCEPTS_NOTIFICATIONS = 5,
+            QUNS_QUIET_TIME = 6,
+            QUNS_APP = 7
+        }
+
+        [DllImport("shell32.dll")]
+        static extern int SHQueryUserNotificationState(out QUERY_USER_NOTIFICATION_STATE pquns);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetTopWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+        private const uint GW_HWNDNEXT = 2;
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+        private const int DWMWA_CLOAKED = 14;
+        public const int WS_EX_TOOLWINDOW = 0x00000080;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        private DispatcherTimer _fullscreenTimer;
+        private bool _isFullscreenActive = false;
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct Win32Point { public Int32 X; public Int32 Y; }
@@ -87,6 +151,10 @@ namespace WinRinglight
             _webcamTimer = new DispatcherTimer();
             _webcamTimer.Interval = TimeSpan.FromSeconds(2);
             _webcamTimer.Tick += WebcamTimer_Tick;
+
+            _fullscreenTimer = new DispatcherTimer();
+            _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(50);     //check for fullscreen changes
+            _fullscreenTimer.Tick += FullscreenTimer_Tick;
 
             SetupTrayIcon();
         }
@@ -162,6 +230,9 @@ namespace WinRinglight
             CompositionTarget.Rendering += OnRendering;
 
             _webcamTimer?.Start();
+
+            ApplyCaptureAffinity();
+            _fullscreenTimer?.Start();
 
             FlushMemory();
         }
@@ -261,6 +332,107 @@ namespace WinRinglight
             }
         }
 
+        public void ApplyCaptureAffinity()
+        {
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            uint affinity = Config.Current.HideFromCapture ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
+            SetWindowDisplayAffinity(hwnd, affinity);
+        }
+
+        private void FullscreenTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_isRinglightOn) return;
+
+            bool isFullscreenNow = false;
+            IntPtr currentHwnd = GetTopWindow(IntPtr.Zero);
+
+            // Eigene Prozess-ID
+            uint myPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+
+            // --- STUFE 1: DIE Z-ORDER SCHLEIFE ---
+            while (currentHwnd != IntPtr.Zero)
+            {
+                System.Text.StringBuilder className = new System.Text.StringBuilder(256);
+                GetClassName(currentHwnd, className, className.Capacity);
+                string cName = className.ToString();
+
+                // Wenn wir die Taskleiste (Haupt oder Nebenmonitor) VOR einem Vollbild-Spiel finden:
+                // -> Die Taskleiste ist sichtbar! Abbruch.
+                if (cName == "Shell_TrayWnd" || cName == "Shell_SecondaryTrayWnd")
+                {
+                    isFullscreenNow = false;
+                    break;
+                }
+
+                // Uns selbst ignorieren
+                GetWindowThreadProcessId(currentHwnd, out uint windowPid);
+                if (windowPid == myPid)
+                {
+                    currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
+                    continue;
+                }
+
+                if (IsWindowVisible(currentHwnd))
+                {
+                    DwmGetWindowAttribute(currentHwnd, DWMWA_CLOAKED, out int cloaked, 4);
+
+                    if (cloaked == 0)
+                    {
+                        int exStyle = GetWindowLong(currentHwnd, GWL_EXSTYLE);
+                        bool isToolWindow = (exStyle & WS_EX_TOOLWINDOW) != 0;
+                        bool isTransparent = (exStyle & WS_EX_TRANSPARENT) != 0;
+
+                        if (!isToolWindow && !isTransparent)
+                        {
+                            // Desktop-Elemente ignorieren
+                            if (cName != "Progman" && cName != "WorkerW" && cName != "EdgeUiInputTopWnd")
+                            {
+                                GetWindowRect(currentHwnd, out RECT appRect);
+                                var screen = System.Windows.Forms.Screen.FromHandle(currentHwnd);
+
+                                int w = appRect.Right - appRect.Left;
+                                int h = appRect.Bottom - appRect.Top;
+
+                                // Ist es ein ECHTES Vollbild-Fenster (Monitor Bounds)?
+                                if (w >= screen.Bounds.Width - 5 && h >= screen.Bounds.Height - 5)
+                                {
+                                    // Wir haben ein Vollbild gefunden, das die Taskleiste verdeckt!
+                                    isFullscreenNow = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
+            }
+
+            // --- STUFE 2: DER STARTMENÜ-OVERRIDE (Deine Beobachtung!) ---
+            // Wir prüfen das Fenster, in dem der Cursor gerade blinkt.
+            IntPtr fgHwnd = GetForegroundWindow();
+            System.Text.StringBuilder fgClass = new System.Text.StringBuilder(256);
+            GetClassName(fgHwnd, fgClass, fgClass.Capacity);
+            string fgName = fgClass.ToString();
+
+            // Wenn der Nutzer Win oder Win+S gedrückt hat, ist eines dieser Overlays aktiv:
+            if (fgName == "Windows.UI.Core.CoreWindow" || // Windows 10 Startmenü / Suche
+                fgName == "StartMenuExperienceHost" ||    // Windows 11 Startmenü
+                fgName == "SearchHost" ||                 // Windows 11 Suche
+                fgName == "Shell_TrayWnd")                // Taskleiste wurde angeklickt
+            {
+                // Egal was das Spiel im Hintergrund macht: Taskleiste freimachen!
+                isFullscreenNow = false;
+            }
+
+            // Wenn sich der Status geändert hat -> Animieren!
+            if (isFullscreenNow != _isFullscreenActive)
+            {
+                _isFullscreenActive = isFullscreenNow;
+                UpdateMonitorSetup();
+            }
+        }
+
+
         private void OnRendering(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
@@ -286,26 +458,53 @@ namespace WinRinglight
             }
         }
 
+        private void AnimateBorderToRect(Border border, Rect targetRect, bool isAppleStyle)
+        {
+            double targetX = targetRect.X;
+            double targetY = targetRect.Y;
+            double targetW = targetRect.Width;
+            double targetH = targetRect.Height;
+
+            if (isAppleStyle)
+            {
+                targetX += 20;
+                targetY += 20;
+                targetW -= 40;
+                targetH -= 40;
+            }
+
+            var duration = TimeSpan.FromSeconds(0.4); 
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
+
+            ThicknessAnimation marginAnim = new ThicknessAnimation { To = new Thickness(targetX, targetY, 0, 0), Duration = duration, EasingFunction = ease };
+            DoubleAnimation widthAnim = new DoubleAnimation { To = targetW, Duration = duration, EasingFunction = ease };
+            DoubleAnimation heightAnim = new DoubleAnimation { To = targetH, Duration = duration, EasingFunction = ease };
+
+            Timeline.SetDesiredFrameRate(marginAnim, 60);
+            Timeline.SetDesiredFrameRate(widthAnim, 60);
+            Timeline.SetDesiredFrameRate(heightAnim, 60);
+
+            border.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
+            border.BeginAnimation(FrameworkElement.WidthProperty, widthAnim);
+            border.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
+        }
+
         public void ApplyStyleLive(bool isAppleStyle)
         {
             foreach (var border in _activeBorders)
             {
                 Rect baseRect = (Rect)border.Tag;
 
+                AnimateBorderToRect(border, baseRect, isAppleStyle);
+
                 if (isAppleStyle)
                 {
                     double minSide = Math.Min(baseRect.Width, baseRect.Height);
                     border.CornerRadius = new CornerRadius(minSide * 0.22);
-                    border.Margin = new Thickness(baseRect.X + 20, baseRect.Y + 20, 0, 0);
-                    border.Width = baseRect.Width - 40;
-                    border.Height = baseRect.Height - 40;
                 }
                 else
                 {
-                    border.Margin = new Thickness(baseRect.X, baseRect.Y, 0, 0);
                     border.CornerRadius = new CornerRadius(3);
-                    border.Width = baseRect.Width;
-                    border.Height = baseRect.Height;
                 }
             }
         }
@@ -316,13 +515,8 @@ namespace WinRinglight
         {
             if (!this.IsLoaded) return;
 
-            _activeBorders.Clear();
-            MainGrid.Children.Clear();
-
-            this.Left = SystemParameters.VirtualScreenLeft;
-            this.Top = SystemParameters.VirtualScreenTop;
-            this.Width = SystemParameters.VirtualScreenWidth;
-            this.Height = SystemParameters.VirtualScreenHeight;
+            // WICHTIG: Die Liste wird ganz oben deklariert, damit sie überall gültig ist!
+            System.Collections.Generic.List<Rect> targetRects = new System.Collections.Generic.List<Rect>();
 
             if (Config.Current.IsSpanned)
             {
@@ -340,11 +534,10 @@ namespace WinRinglight
 
                 double spanW = maxX - minX;
                 double spanH = maxY - minY;
-
                 double relX = minX - SystemParameters.VirtualScreenLeft;
                 double relY = minY - SystemParameters.VirtualScreenTop;
 
-                AddRinglight(relX, relY, spanW, spanH);
+                targetRects.Add(new Rect(relX, relY, spanW, spanH));
             }
             else
             {
@@ -353,25 +546,60 @@ namespace WinRinglight
                 {
                     if (index < screens.Length)
                     {
-                        var s = screens[index].WorkingArea;
-                        double relX = s.X - SystemParameters.VirtualScreenLeft;
-                        double relY = s.Y - SystemParameters.VirtualScreenTop;
-                        AddRinglight(relX, relY, s.Width, s.Height);
+                        var s = screens[index];
+                        var rect = _isFullscreenActive ? s.Bounds : s.WorkingArea;
+
+                        double relX = rect.X - SystemParameters.VirtualScreenLeft;
+                        double relY = rect.Y - SystemParameters.VirtualScreenTop;
+                        targetRects.Add(new Rect(relX, relY, rect.Width, rect.Height));
                     }
                 }
             }
 
-            ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
-            ApplyStyleLive(Config.Current.VisualStyleIndex == 0);
+            if (_activeBorders.Count != targetRects.Count * 2)
+            {
+                _activeBorders.Clear();
+                MainGrid.Children.Clear();
+
+                this.Left = SystemParameters.VirtualScreenLeft;
+                this.Top = SystemParameters.VirtualScreenTop;
+                this.Width = SystemParameters.VirtualScreenWidth;
+                this.Height = SystemParameters.VirtualScreenHeight;
+
+                foreach (var r in targetRects)
+                {
+                    AddRinglight(r.X, r.Y, r.Width, r.Height);
+                }
+
+                ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
+                ApplyStyleLive(Config.Current.VisualStyleIndex == 0);
+            }
+            else
+            {
+                bool isApple = Config.Current.VisualStyleIndex == 0;
+
+                for (int i = 0; i < targetRects.Count; i++)
+                {
+                    var rect = targetRects[i];
+                    var glowBorder = _activeBorders[i * 2];
+                    var coreBorder = _activeBorders[i * 2 + 1];
+
+                    glowBorder.Tag = rect;
+                    coreBorder.Tag = rect;
+
+                    AnimateBorderToRect(glowBorder, rect, isApple);
+                    AnimateBorderToRect(coreBorder, rect, isApple);
+                }
+            }
         }
 
         public double GetSmartTemperature()
         {
             double h = DateTime.Now.TimeOfDay.TotalHours;
 
-            if (h >= 6 && h < 12) return MapTemp(h, 6, 12, 2500, 6500); // Sonnenaufgang bis Mittag
-            if (h >= 12 && h < 18) return MapTemp(h, 12, 18, 6500, 3000); // Mittag bis Abend
-            if (h >= 18 && h < 22) return MapTemp(h, 18, 22, 3000, 2000); // Abend bis Nacht
+            if (h >= 6 && h < 12) return MapTemp(h, 6, 12, 2500, 6500); 
+            if (h >= 12 && h < 18) return MapTemp(h, 12, 18, 6500, 3000); 
+            if (h >= 18 && h < 22) return MapTemp(h, 18, 22, 3000, 2000);
 
             return 2000;
         }

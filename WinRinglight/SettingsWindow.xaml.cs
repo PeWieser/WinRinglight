@@ -45,6 +45,8 @@ namespace WinRinglight
             LblAutoTemp.Text = Config.GetText("AutoTemp");
             LblAutostart.Text = Config.GetText("StartWithWindows");
             LblWebcam.Text = Config.GetText("StartWithWebcam");
+            LblHideCapture.Text = Config.GetText("HideCapture");
+            ChkHideCapture.IsChecked = Config.Current.HideFromCapture;
             LblHotkey.Text = Config.GetText("HotkeyToggle");
             LblSupport.Text = Config.GetText("SupportProject");
             TxtHotkey.Text = Config.GetText("PressHotkey");
@@ -338,6 +340,14 @@ namespace WinRinglight
             if (!this.IsLoaded) return;
             Config.Current.AutoWebcam = ChkWebcam.IsChecked == true;
             Config.Save();
+        }
+
+        private void ChkHideCapture_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!this.IsLoaded) return;
+            Config.Current.HideFromCapture = ChkHideCapture.IsChecked == true;
+            Config.Save();
+            _mainWindow.ApplyCaptureAffinity(); // Ruft das Update im Hauptfenster auf
         }
 
         private void LinkGithub_RequestNavigate(object sender, RequestNavigateEventArgs e)

@@ -219,6 +219,11 @@
                             <CheckBox x:Name="ChkWebcam" Foreground="#E0E0E0" FontWeight="SemiBold" Checked="ChkWebcam_Changed" Unchecked="ChkWebcam_Changed">
                                 <TextBlock x:Name="LblWebcam" Text="Automatisch einschalten, wenn Webcam aktiv ist"/>
                             </CheckBox>
+
+                            <CheckBox x:Name="ChkHideCapture" Foreground="#E0E0E0" FontWeight="SemiBold" 
+                                Margin="0,15,0,15" Checked="ChkHideCapture_Changed" Unchecked="ChkHideCapture_Changed">
+                                <TextBlock x:Name="LblHideCapture" Text="Auf Screenshots / in Screenshares verstecken"/>
+                            </CheckBox>
                         </StackPanel>
                     </Border>
 

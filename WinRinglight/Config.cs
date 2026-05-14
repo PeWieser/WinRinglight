@@ -20,13 +20,19 @@ namespace WinRinglight
         public List<int> SelectedMonitors { get; set; } = new List<int> { 0 };
         public bool AutoWebcam { get; set; } = false;
         public string HotkeyText { get; set; } = "Ctrl + Alt + R";
+        public bool HideFromCapture { get; set; } = true;
         public string SupportUrl { get; } = "https://ko-fi.com/melo04";
     }
 
     public static class Config
     {
         public static SettingsData Current = new SettingsData();
-        private static string FilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+
+        private static string FilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WinRinglight",
+            "settings.json"
+        );
 
         // --- Developer Settings (Fine-tuning) ---
         public static double MaxTemperatureKelvin = 6500;
@@ -43,10 +49,11 @@ namespace WinRinglight
         {
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
                 string json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(FilePath, json);
             }
-            catch { /* Handle error silently or log */ }
+            catch { }
         }
 
         // --- Load Settings ---
@@ -178,7 +185,11 @@ namespace WinRinglight
             { "AutoTemp", new Dictionary<string, string> {
                 { "de", "Automatisch an Tageszeit anpassen" },
                 { "en", "Auto-adjust to time of day" }
-            }}
+            }},
+            { "HideCapture", new Dictionary<string, string> {
+                { "de", "Auf Screenshots / in Screenshares verstecken" },
+                { "en", "Hide in screenshots and screen shares" }
+            }},
         };
     }
 }

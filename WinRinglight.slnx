@@ -1,3 +1,16 @@
 <Solution>
-  <Project Path="WinRinglight/WinRinglight.csproj" />
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="ARM" />
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="WinRinglight.Package/WinRinglight.Package.wapproj" Type="c7167f0d-bc9f-4e6e-afe1-012c56b48db5" Id="aa841658-1d17-4ffc-b28a-cef57730e564">
+    <Deploy />
+  </Project>
+  <Project Path="WinRinglight/WinRinglight.csproj">
+    <Platform Solution="Release|ARM64" Project="arm64" />
+    <Platform Solution="Release|x64" Project="x64" />
+  </Project>
 </Solution>
