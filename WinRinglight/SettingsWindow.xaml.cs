@@ -115,7 +115,7 @@ namespace WinRinglight
             var item = checkbox?.DataContext as MonitorItem;
             if (item == null) return;
 
-            if (checkbox.IsChecked == true)
+            if (checkbox?.IsChecked == true)
             {
                 if (!Config.Current.SelectedMonitors.Contains(item.Index))
                     Config.Current.SelectedMonitors.Add(item.Index);

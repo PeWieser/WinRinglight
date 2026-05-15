@@ -96,7 +96,7 @@ namespace WinRinglight
             public int Bottom;
         }
 
-        private DispatcherTimer _fullscreenTimer;
+        private DispatcherTimer? _fullscreenTimer;
         private bool _isFullscreenActive = false;
 
         [StructLayout(LayoutKind.Sequential)]

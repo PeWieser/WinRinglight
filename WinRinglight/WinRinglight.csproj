@@ -18,4 +18,13 @@
 	  <Resource Include="icon.ico" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Strings\de-DE\" />
+	  <Folder Include="Strings\en-US\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="WPF.CornerSmoothing" Version="1.0.7" />
+	</ItemGroup>
+
 </Project>
