@@ -59,6 +59,12 @@ namespace WinRinglight
         /// <param name="lastWalkMs">Zeitpunkt des letzten Walks in ms.</param>
         public static bool ShouldWalk(long nowMs, long lastWalkMs)
         {
+            // Noch nie gelaufen (Start bei 0, Uhr bei 0) -> sofort messen.
+            // Ohne diese Sonderregel bliebe der Vollbild-Zustand nach dem
+            // Start bis zu einer Sekunde lang falsch.
+            if (nowMs <= 0 && lastWalkMs <= 0) return true;
+            if (lastWalkMs <= 0) return true;
+
             return nowMs - lastWalkMs >= WalkIntervalMs;
         }
     }

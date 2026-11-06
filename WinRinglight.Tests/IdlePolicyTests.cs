@@ -61,10 +61,23 @@ namespace WinRinglight.Tests
         }
 
         [Fact]
-        public void WalkKurzDanach_IstVerboten()
+        public void WalkKurzNachEinemEchtenWalk_IstVerboten()
         {
-            Assert.False(IdlePolicy.ShouldWalk(500, 0));
-            Assert.True(IdlePolicy.ShouldWalk(1000, 0));
+            // lastWalk = 200 heisst: es wurde wirklich schon gemessen.
+            Assert.False(IdlePolicy.ShouldWalk(700, 200));
+            Assert.True(IdlePolicy.ShouldWalk(1200, 200));
+        }
+
+        /// <summary>
+        /// Sonderfall: solange noch nie gemessen wurde (lastWalk = 0),
+        /// muss sofort gemessen werden - sonst ist der Vollbild-Zustand
+        /// nach dem Start bis zu einer Sekunde falsch.
+        /// </summary>
+        [Fact]
+        public void NochNieGemessen_WirdSofortGemessen()
+        {
+            Assert.True(IdlePolicy.ShouldWalk(0, 0));
+            Assert.True(IdlePolicy.ShouldWalk(500, 0));
         }
     }
 }
