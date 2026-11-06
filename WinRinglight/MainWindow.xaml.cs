@@ -611,6 +611,31 @@ namespace WinRinglight
 
         private System.Collections.Generic.List<System.Windows.Controls.Border> _activeBorders = new System.Collections.Generic.List<System.Windows.Controls.Border>();
 
+        // Session-only experiments. They intentionally never modify saved settings.
+        public bool DevCacheElements { get; private set; }
+        public bool DevCacheGroup { get; private set; }
+        public bool DevDisableGlow { get; private set; }
+
+        public void SetDevExperiments(bool cacheElements, bool cacheGroup, bool disableGlow)
+        {
+            DevCacheElements = cacheElements;
+            DevCacheGroup = cacheGroup;
+            DevDisableGlow = disableGlow;
+            ApplyDevExperiments();
+        }
+
+        private void ApplyDevExperiments()
+        {
+            MainGrid.CacheMode = DevCacheGroup ? new BitmapCache() : null;
+            foreach (var border in _activeBorders)
+            {
+                border.CacheMode = DevCacheElements ? new BitmapCache() : null;
+                if (border is GlowBorder)
+                    border.Opacity = DevDisableGlow ? 0.0 : 0.55;
+            }
+        }
+
+
         public void UpdateMonitorSetup()
         {
             if (!this.IsLoaded) return;
@@ -673,6 +698,7 @@ namespace WinRinglight
 
                 ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
                 ApplyStyleLive(Config.Current.VisualStyleIndex == 0);
+                ApplyDevExperiments();
             }
             else
             {

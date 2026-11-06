@@ -196,6 +196,21 @@
                 </StackPanel>
             </TabItem>
 
+            <TabItem x:Name="TabDev" Header="Dev">
+                <StackPanel Margin="0,15,0,0">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel>
+                            <TextBlock x:Name="LblDevTitle" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="LblDevDescription" TextWrapping="Wrap" Foreground="#AAAAAA" Margin="0,0,0,14"/>
+                            <CheckBox x:Name="ChkDevElementCache" Margin="0,0,0,12" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevElementCache" TextWrapping="Wrap"/></CheckBox>
+                            <CheckBox x:Name="ChkDevGroupCache" Margin="0,0,0,12" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevGroupCache" TextWrapping="Wrap"/></CheckBox>
+                            <CheckBox x:Name="ChkDevNoGlow" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevNoGlow" TextWrapping="Wrap"/></CheckBox>
+                            <TextBlock x:Name="LblDevWarning" TextWrapping="Wrap" Foreground="#E6BC78" Margin="0,14,0,0" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </TabItem>
+
             <TabItem x:Name="TabSystem" Header="System">
                 <StackPanel Margin="0,15,0,0">
                     <Border Style="{StaticResource CardStyle}">

@@ -54,3 +54,8 @@ Stand: 2026-11-06. Vor weiterer Arbeit aktualisieren. Nutzer möchte laufend üb
 ## Rückmeldung zu d32e98f
 - Nutzer bestätigt Temperaturregler; System-Tab durch neue FPS-Karte überladen und scrollbar. FPS-Karte in eigenen Tab „Leistung“ verschoben, bisheriges System-Layout ohne ScrollViewer wiederhergestellt. Auf kleineren Auflösungen/DPI nicht visuell verifiziert.
 - GPU bei maximaler Dicke nach schmalen Glow-Konturen: bei starkem Hin- und Herwackeln bis ca. 34 %, moderat ca. 15 % (Nutzerangaben). Zuvor max. ca. 45 %, Messung nicht standardisiert. Nutzer lehnt Drosselung unter 60 Hz wegen Ruckeln ab. Keine Totzone einbauen, ohne sie zu besprechen.
+
+## Dev-Experimente (temporär)
+- Nutzer möchte mögliche Änderungen testweise per Dev-Tab aktivieren, ohne Framerate-Drosselung. Drei abgeschaltete Sitzungs-Schalter: BitmapCache auf Ring- und Glow-Elementen, BitmapCache auf der gesamten maskierten Gruppe, Glow aus (Diagnose). Optik und GPU-Speicherbedarf können sich ändern, Ergebnisse sind hardwareabhängig. Zustand gilt sofort und wird beim Beenden verworfen; neue Monitorelemente übernehmen ihn. Keine Totzone und kein versteckter 30-Hz-Modus.
+- Das sind bewusst WPF-Experimente und keine vollständige Umsetzung aller denkbaren Optimierungen: ein echter Windows-Composition-Renderer braucht ein gesondertes Prototyp-Fenster und Tests für Capture, Klickdurchleitung, Monitor/DPI und Optik. Nicht behaupten, dieser sei hier eingebaut.
+- Testverfahren: gleiches Setup, 60 FPS, maximale Dicke, gleiche Cursorbewegung, mindestens 30–60 s. Alle aus als Referenz, dann jeden Schalter separat (insbesondere Glow aus nur als Diagnosetest). GPU/CPU inkl. DWM und Erscheinung festhalten; optional Kombinationen im Anschluss.

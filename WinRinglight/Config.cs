@@ -96,6 +96,26 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "DevTitle", new Dictionary<string, string> {
+                { "de", "Temporäre Rendering-Experimente" }, { "en", "Temporary rendering experiments" }
+            }},
+            { "DevDescription", new Dictionary<string, string> {
+                { "de", "Zum Vergleichen bei gleicher Ringdicke und Cursor-FPS. Zuerst alle aus, dann Optionen einzeln testen." },
+                { "en", "Compare with the same ring thickness and cursor FPS. Start with all off, then test each option separately." }
+            }},
+            { "DevElementCache", new Dictionary<string, string> {
+                { "de", "Ring und Glow einzeln zwischenspeichern" }, { "en", "Cache ring and glow separately" }
+            }},
+            { "DevGroupCache", new Dictionary<string, string> {
+                { "de", "Gesamte Ringgruppe zwischenspeichern" }, { "en", "Cache the entire ring group" }
+            }},
+            { "DevNoGlow", new Dictionary<string, string> {
+                { "de", "Glow abschalten (nur Diagnose)" }, { "en", "Disable glow (diagnostic only)" }
+            }},
+            { "DevWarning", new Dictionary<string, string> {
+                { "de", "Experimente können Leistung oder Darstellung verschlechtern und mehr GPU-Speicher verbrauchen. Sie werden beim Beenden zurückgesetzt." },
+                { "en", "Experiments may worsen performance or appearance and use more GPU memory. They reset when the app exits." }
+            }},
             { "TabPerformance", new Dictionary<string, string> {
                 { "de", "Leistung" },
                 { "en", "Performance" }

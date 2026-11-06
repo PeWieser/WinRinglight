@@ -38,6 +38,15 @@ namespace WinRinglight
             TabAppearance.Header = Config.GetText("TabAppearance");
             TabSystem.Header = Config.GetText("TabSystem");
             TabPerformance.Header = Config.GetText("TabPerformance");
+            LblDevTitle.Text = Config.GetText("DevTitle");
+            LblDevDescription.Text = Config.GetText("DevDescription");
+            LblDevElementCache.Text = Config.GetText("DevElementCache");
+            LblDevGroupCache.Text = Config.GetText("DevGroupCache");
+            LblDevNoGlow.Text = Config.GetText("DevNoGlow");
+            LblDevWarning.Text = Config.GetText("DevWarning");
+            ChkDevElementCache.IsChecked = _mainWindow.DevCacheElements;
+            ChkDevGroupCache.IsChecked = _mainWindow.DevCacheGroup;
+            ChkDevNoGlow.IsChecked = _mainWindow.DevDisableGlow;
             LblCursorFps.Text = Config.GetText("CursorFps");
             LblUnlimitedFps.Text = Config.GetText("CursorFpsUnlimited");
             LblFpsWarning.Text = Config.GetText("CursorFpsWarning");
@@ -194,6 +203,13 @@ namespace WinRinglight
             }
             _updateTimer.Stop();
             _updateTimer.Start();
+        }
+
+        private void DevExperiment_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            _mainWindow.SetDevExperiments(ChkDevElementCache.IsChecked == true,
+                ChkDevGroupCache.IsChecked == true, ChkDevNoGlow.IsChecked == true);
         }
 
         private void ApplyCursorFps()
