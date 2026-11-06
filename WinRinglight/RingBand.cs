@@ -242,7 +242,7 @@ namespace WinRinglight
             foreach (BandPiece piece in Pieces(rect, radius, band, side))
             {
                 var clip = new RectangleGeometry(piece.Bounds);
-                Geometry geometry = Geometry.Intersect(whole, clip);
+                Geometry geometry = new CombinedGeometry(GeometryCombineMode.Intersect, whole, clip);
 
                 // Versatz ins Zielkoordinatensystem. Damit liegen alle
                 // Koordinaten im positiven Bereich - ein Path mit rein

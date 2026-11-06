@@ -8,6 +8,7 @@ using System.Windows.Media;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
 using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace WinRinglight
 {

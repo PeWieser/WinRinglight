@@ -197,7 +197,7 @@ namespace WinRinglight.Tests
         [InlineData(0.0)]     // ganz ohne Rundung
         public void BandIstLueckenlosUndUeberlapptNicht(double radius)
         {
-            var pieces = RingBand.Pieces(W, H, radius, BAND);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), radius, BAND, BandSide.Outward);
 
             // Punkte auf dem Band testen: Abstand zur Kernkontur zwischen 0 und BAND.
             // Ein Punkt "gehoert zum Band", wenn er ausserhalb des Kerns liegt
