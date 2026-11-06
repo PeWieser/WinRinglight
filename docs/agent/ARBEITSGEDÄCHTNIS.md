@@ -122,6 +122,43 @@ Beim ersten Start wird die Datei angelegt (sonst gäbe es nichts zu bearbeiten).
 `Config.X` sind Durchreiche-Eigenschaften auf `Current.X`, mit Klemmung gegen
 Unsinnswerte (NaN, negativ, zu groß).
 
+## 3e. Glow-Geometrie (Stand `123add5`)
+
+**Der Fehler, den der Nutzer im Screenshot gesehen hat:**
+Der Saum lag INNEN statt aussen. Folgen:
+* Auf den geraden Seiten lag er unter dem Kern -> Glow unsichtbar.
+* An den runden Ecken reichten die geraden Rechtecke in die Ecke ->
+  **eckige Leuchtstreifen**.
+Zusaetzlich: `ApplyStyleLive` baute den Saum beim Stilwechsel gar nicht neu,
+er behielt also die alte eckige Kontur.
+
+**Richtige Konstruktion (`RingBand.cs`):**
+* Band ist **konstant breit** und liegt **ausserhalb** der Kernkante.
+* Kontur = dieselbe wie der Kern: `outer(r+b) MINUS core(r)` als
+  `CombinedGeometry(Exclude)`, dann in 8 Stuecke geschnitten
+  (4 gerade + 4 Ecken, `Intersect` mit Rechteck).
+* Ecken: `RadialGradientBrush` mit `Start = r/(r+b)` - sonst liegt der
+  sichtbare Bereich im fast durchsichtigen Teil und der Saum ist an den
+  Ecken weg. **Das ist die zweite Falle.**
+* Gerade Stuecke: `LinearGradientBrush`, Kasten = Band, Verlauf 0..1.
+* Einzige Quelle fuer den Radius: `RingBand.CoreCornerRadius`. Kern und Saum
+  MUESSEN daraus rechnen, sonst laufen die Konturen auseinander.
+* Canvas ist um `RinglightGlowPad` (48) groesser und entsprechend versetzt,
+  plus `inset` (20) im Apple-Stil. Die Animation laeuft trotzdem auf dem
+  aeusseren Ring-Rechteck.
+* `RebuildGlowIfNeeded` nur ueber `GlowRebuildPolicy` - nicht pro Frame.
+* `ApplyStyleLive` setzt `_glowStates[i] = null` und baut neu.
+
+**Nachweis:** `RingBandAbdeckungTests` prueft lueckenlose Abdeckung ohne
+Ueberlappung bei Radius 120 / 3 / 0. Mit Naht-Toleranz (EPS = 0,01), sonst
+zaehlt die Naht zwischen zwei Stuecken als Luecke. Vorher in Python
+gegengeprueft: 0 Luecken, 0 Ueberlappungen.
+
+**Zur Frage "echter Squircle":** WPF kann Superellipsen nicht als
+Border-CornerRadius. Mit der neuen Band-Konstruktion ist ein Squircle-Pfad
+moeglich (Geometrie statt Border), aber das ist ein eigenes Thema - erst nach
+Abnahme der jetztigen Optik.
+
 ## 4. Fehler, die ich schon gemacht habe (nicht wiederholen)
 
 * **CI-Workflow, der eine WPF-App unter `ubuntu-latest` baut** → geht nicht.
