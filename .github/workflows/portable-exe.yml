@@ -1,0 +1,143 @@
+name: Portable EXE
+
+# Baut eine einzelne, portable WinRinglight.exe zum Ausprobieren.
+# Kein Release - das Artefakt haengt am Workflow-Lauf und ist nur fuer
+# eingeloggte Nutzer mit Zugriff auf das Repo sichtbar.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "WinRinglight/**"
+      - ".github/workflows/portable-exe.yml"
+
+concurrency:
+  group: exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Portable EXE bauen
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .NET einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Selbst-enthaltene EXE veroeffentlichen
+        id: pub
+        shell: pwsh
+        run: |
+          $out = "publish"
+          $log = "publish.log"
+          dotnet publish WinRinglight/WinRinglight.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -o $out 2>&1 | Tee-Object -FilePath $log
+
+          if ($LASTEXITCODE -ne 0) {
+            "pub_exit=$LASTEXITCODE" >> $env:GITHUB_OUTPUT
+            exit $LASTEXITCODE
+          }
+          "pub_exit=0" >> $env:GITHUB_OUTPUT
+
+          Get-ChildItem $out | Select-Object Name, Length | Format-Table
+          $exe = Get-ChildItem $out -Filter "WinRinglight.exe" | Select-Object -First 1
+          if ($exe) {
+            $mb = [math]::Round($exe.Length / 1MB, 1)
+            "exe_mb=$mb" >> $env:GITHUB_OUTPUT
+            "exe_name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Version und Hinweise dazulegen
+        if: steps.pub.outputs.pub_exit == '0'
+        shell: pwsh
+        run: |
+          $readme = @()
+          $readme += "WinRinglight - portabler Testbuild"
+          $readme += ""
+          $readme += "Commit:   ${{ github.sha }}"
+          $readme += "Branch:   ${{ github.ref_name }}"
+          $readme += "Gebaut:   $(Get-Date -Format 'yyyy-MM-dd HH:mm') UTC"
+          $readme += ""
+          $readme += "Start: einfach WinRinglight.exe doppelklicken."
+          $readme += "Keine Installation, kein .NET noetig (self-contained)."
+          $readme += "Symbol erscheint unten rechts im Infobereich der Taskleiste."
+          $readme += ""
+          $readme += "Einstellungen liegen weiterhin in:"
+          $readme += "  %LOCALAPPDATA%\WinRinglight\settings.json"
+          $readme += ""
+          $readme += "Neue Performance-Schalter (in dieser Datei aenderbar):"
+          $readme += "  ShrinkWindowToUsedArea   - Fenster nur so gross wie genutzt (Phase 1)"
+          $readme += "  CursorUpdateIntervalMs   - Mindestabstand der Loch-Aktualisierung (Phase 2)"
+          $readme += "  CursorDeadZoneDip        - tote Zone gegen Maus-Zittern (Phase 2)"
+          $readme += ""
+          $readme += "Zum Vergleich mit der alten Version: die Schalter auf"
+          $readme += "  ShrinkWindowToUsedArea=false, CursorUpdateIntervalMs=0, CursorDeadZoneDip=0"
+          $readme += "setzen und die App neu starten."
+          $readme | Out-File -FilePath "publish/LIESMICH.txt" -Encoding utf8
+
+      - name: Als Artefakt hochladen
+        if: steps.pub.outputs.pub_exit == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinRinglight-portable-${{ github.run_number }}
+          path: publish/
+          retention-days: 30
+
+      - name: Hinweis in den Pull Request
+        if: always() && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $pr = gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number'
+          if ([string]::IsNullOrWhiteSpace($pr)) {
+            Write-Host "Kein Pull Request - Hinweis uebersprungen."
+            exit 0
+          }
+
+          if ("${{ steps.pub.outputs.pub_exit }}" -eq "0") {
+            $size = "${{ steps.pub.outputs.exe_mb }}"
+            $body = @()
+            $body += "## Portable EXE ist fertig"
+            $body += ""
+            $body += "**Groesse:** $size MB (eine einzelne Datei, kein .NET noetig)"
+            $body += ""
+            $body += "**Herunterladen:** [Artefakt `WinRinglight-portable-${{ github.run_number }}`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            $body += ""
+            $body += "Unten auf der Seite unter *Artifacts*. Nur fuer eingeloggte Nutzer sichtbar, nicht oeffentlich."
+            $body += ""
+            $body += "**Zum Testen:**"
+            $body += "1. ZIP entpacken"
+            $body += "2. ``WinRinglight.exe`` doppelklicken"
+            $body += "3. Symbol erscheint unten rechts im Infobereich"
+            $body += ""
+            $body += "**Vorher/Nachher vergleichen** - in ``%LOCALAPPDATA%\WinRinglight\settings.json``:"
+            $body += '```json'
+            $body += '"ShrinkWindowToUsedArea": true,     // false = altes Verhalten'
+            $body += '"CursorUpdateIntervalMs": 33.0,     // 0 = jedes Frame'
+            $body += '"CursorDeadZoneDip": 2.0           // 0 = jede Pixelbewegung'
+            $body += '```'
+          } else {
+            $body = @()
+            $body += "## Portable EXE konnte nicht gebaut werden"
+            $body += ""
+            $body += "Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+
+          $body | Out-File -FilePath exe-note.md -Encoding utf8
+          gh pr comment $pr --body-file exe-note.md
