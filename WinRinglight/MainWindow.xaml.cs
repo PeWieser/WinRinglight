@@ -106,6 +106,12 @@ namespace WinRinglight
         }
 
         private DispatcherTimer? _fullscreenTimer;
+
+        // Ersetzt CompositionTarget.Rendering. Das Event feuerte JEDEN Frame,
+        // auch im Stillstand, und hielt den Render-Takt dauerhaft wach.
+        // Der Timer laeuft nur, wenn das Ringlicht an ist.
+        private DispatcherTimer? _cursorTimer;
+        private bool _cursorTimerRunning;
         private bool _isFullscreenActive = false;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -170,6 +176,10 @@ namespace WinRinglight
             _fullscreenTimer = new DispatcherTimer();
             _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(50);     //check for fullscreen changes
             _fullscreenTimer.Tick += FullscreenTimer_Tick;
+
+            _cursorTimer = new DispatcherTimer(DispatcherPriority.Render);
+            _cursorTimer.Interval = TimeSpan.FromMilliseconds(33);         // ~30 Hz reicht fuer ein Loch
+            _cursorTimer.Tick += (_, _) => UpdateCursorCutout();
 
             SetupTrayIcon();
         }
@@ -241,8 +251,6 @@ namespace WinRinglight
             UpdateMonitorSetup();
 
             RegisterHotkeyFromString(Config.Current.HotkeyText);
-
-            CompositionTarget.Rendering += OnRendering;
 
             _webcamTimer?.Start();
 
@@ -323,6 +331,15 @@ namespace WinRinglight
             // nicht erst beim naechsten Mauszucken.
             _throttle.Reset();
 
+            UpdateCursorTimerState();
+
+            // Beim Einschalten sofort zeichnen - sonst sitzt das Loch fuer die
+            // ersten 33 ms noch an der alten Position (sichtbarer Sprung).
+            if (_isRinglightOn)
+            {
+                UpdateCursorCutout();
+            }
+
             // Den Vollbild-Timer nur laufen lassen, wenn er etwas bewirken kann:
             // aus + keine Webcam-Automatik = niemand kann das Ringlicht einschalten,
             // ausser dem Hotkey (der kommt als Windows-Nachricht, nicht per Timer).
@@ -367,6 +384,26 @@ namespace WinRinglight
         /// Startet oder stoppt den Vollbild-Timer je nach Zustand.
         /// Ohne Ringlicht und ohne Webcam-Automatik hat der Timer keine Aufgabe.
         /// </summary>
+        /// <summary>
+        /// Startet oder stoppt den Cursor-Timer. Aus = kein Timer = kein
+        /// Aufwachen des UI-Threads.
+        /// </summary>
+        private void UpdateCursorTimerState()
+        {
+            if (_cursorTimer == null) return;
+
+            if (_isRinglightOn && !_cursorTimerRunning)
+            {
+                _cursorTimer.Start();
+                _cursorTimerRunning = true;
+            }
+            else if (!_isRinglightOn && _cursorTimerRunning)
+            {
+                _cursorTimer.Stop();
+                _cursorTimerRunning = false;
+            }
+        }
+
         private void UpdateFullscreenTimerState()
         {
             if (_fullscreenTimer == null) return;
@@ -499,7 +536,11 @@ namespace WinRinglight
         }
 
 
-        private void OnRendering(object? sender, EventArgs e)
+        /// <summary>
+        /// Holt die Cursorposition und aktualisiert das Loch - aber nur, wenn
+        /// es sich lohnt. Wird vom Cursor-Timer aufgerufen, nicht mehr pro Frame.
+        /// </summary>
+        private void UpdateCursorCutout()
         {
             if (!_isRinglightOn) return;
 
