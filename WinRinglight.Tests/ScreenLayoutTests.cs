@@ -180,11 +180,11 @@ namespace WinRinglight.Tests
         {
             var window = new Rect(-48, -48, 2016, 1136);
 
-            var p = ScreenLayout.ToWindowDip(new Point(0, 0), window, 1.0);
+            var p = ScreenLayout.ToWindowDip(new System.Windows.Point(0, 0), window, 1.0);
             Assert.Equal(48, p.X, 3);
             Assert.Equal(48, p.Y, 3);
 
-            var q = ScreenLayout.ToWindowDip(new Point(960, 540), window, 1.5);
+            var q = ScreenLayout.ToWindowDip(new System.Windows.Point(960, 540), window, 1.5);
             Assert.Equal((960 + 48) / 1.5, q.X, 3);
             Assert.Equal((540 + 48) / 1.5, q.Y, 3);
         }
@@ -196,7 +196,7 @@ namespace WinRinglight.Tests
             var monitors = new[] { Mon(-1920, -200, 1920, 1080) };
             var l = ScreenLayout.Compute(monitors, new[] { 0 }, false, false, 1.0);
 
-            var p = ScreenLayout.ToWindowDip(new Point(-1000, 100), l.WindowPixels, l.Scale);
+            var p = ScreenLayout.ToWindowDip(new System.Windows.Point(-1000, 100), l.WindowPixels, l.Scale);
 
             Assert.InRange(p.X, 0, l.WindowPixels.Width);
             Assert.InRange(p.Y, 0, l.WindowPixels.Height);

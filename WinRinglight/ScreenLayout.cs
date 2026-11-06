@@ -157,13 +157,13 @@ namespace WinRinglight
         /// Rechnet einen Cursorpunkt (physische Pixel, virtueller Desktop)
         /// in DIP relativ zur Fensterecke um.
         /// </summary>
-        public static Point ToWindowDip(Point cursorPixels, Rect windowPixels, double scale)
+        public static System.Windows.Point ToWindowDip(System.Windows.Point cursorPixels, Rect windowPixels, double scale)
         {
             if (scale <= 0 || double.IsNaN(scale) || double.IsInfinity(scale))
             {
                 scale = 1.0;
             }
-            return new Point(
+            return new System.Windows.Point(
                 (cursorPixels.X - windowPixels.X) / scale,
                 (cursorPixels.Y - windowPixels.Y) / scale);
         }
