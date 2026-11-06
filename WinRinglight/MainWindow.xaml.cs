@@ -227,6 +227,7 @@ namespace WinRinglight
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
             StopCursorTracking();
+            StopComposition();
             _temperatureTimer?.Stop();
             _webcamTimer?.Stop();
             _fullscreenTimer?.Stop();
@@ -354,6 +355,11 @@ namespace WinRinglight
             Timeline.SetDesiredFrameRate(fadeAnimation, 60);
 
             MainGrid.BeginAnimation(UIElement.OpacityProperty, fadeAnimation);
+            if (_compositionBackend != null)
+            {
+                try { _compositionBackend.SetVisible(turnOn); }
+                catch (Exception ex) { FailComposition(ex); }
+            }
         }
 
         private void WebcamTimer_Tick(object? sender, EventArgs e)
@@ -411,6 +417,8 @@ namespace WinRinglight
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             uint affinity = Config.Current.HideFromCapture ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
             SetWindowDisplayAffinity(hwnd, affinity);
+            if (_compositionBackend != null && !_compositionBackend.SetCaptureExcluded(Config.Current.HideFromCapture))
+                FailComposition(new InvalidOperationException("Capture affinity could not be applied"));
         }
 
         private void FullscreenTimer_Tick(object? sender, EventArgs e)
@@ -555,6 +563,11 @@ namespace WinRinglight
 
                 CursorCutoutMask.Center = relMouse;
                 CursorCutoutMask.GradientOrigin = relMouse;
+                if (_compositionBackend != null)
+                {
+                    try { _compositionBackend.UpdateCursor(); }
+                    catch (Exception ex) { FailComposition(ex); }
+                }
             }
         }
 
@@ -591,6 +604,9 @@ namespace WinRinglight
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
+            // Preserve the existing animated style change until the Composition
+            // backend implements an equivalent animation.
+            if (_compositionBackend != null) StopComposition("Style changed; WPF fallback active.");
             foreach (var border in _activeBorders)
             {
                 Rect baseRect = (Rect)border.Tag;
@@ -615,6 +631,55 @@ namespace WinRinglight
         public bool DevCacheElements { get; private set; }
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
+        private CompositionBackend? _compositionBackend;
+        public bool DevCompositionActive => _compositionBackend != null;
+        public string DevCompositionStatus { get; private set; } = "WPF";
+        public event EventHandler? DevCompositionChanged;
+
+        public void SetCompositionExperiment(bool enabled)
+        {
+            if (!enabled) { StopComposition(); return; }
+            StopComposition();
+            try
+            {
+                var screens = System.Windows.Forms.Screen.AllScreens;
+                var dpi = VisualTreeHelper.GetDpi(this);
+                if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362) ||
+                    screens.Length != 1 || Config.Current.IsSpanned ||
+                    Config.Current.SelectedMonitors.Count != 1 || Config.Current.SelectedMonitors[0] != 0 ||
+                    _isFullscreenActive || Math.Abs(dpi.DpiScaleX - 1) > 0.001 || Math.Abs(dpi.DpiScaleY - 1) > 0.001)
+                {
+                    StopComposition("WPF fallback: requires one monitor, 100% scaling, non-spanned and non-fullscreen.");
+                    return;
+                }
+                var screen = screens[0];
+                _compositionBackend = new CompositionBackend(screen.WorkingArea, (float)Config.Current.Thickness,
+                    Config.Current.VisualStyleIndex == 0, _displayedTemperature,
+                    Config.Current.HideFromCapture, _isRinglightOn,
+                    (float)(screen.Bounds.Height * Config.CursorCutoutRadiusPercent));
+                MainGrid.Visibility = Visibility.Hidden;
+                DevCompositionStatus = "Composition active (experimental)";
+                DevCompositionChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex) { FailComposition(ex); }
+        }
+
+        private void FailComposition(Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine("Composition fallback: " + ex);
+            StopComposition("WPF fallback: " + ex.Message);
+        }
+
+        private void StopComposition(string status = "WPF")
+        {
+            var backend = _compositionBackend;
+            _compositionBackend = null;
+            try { backend?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition cleanup: " + ex); }
+            if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
+            DevCompositionStatus = status;
+            DevCompositionChanged?.Invoke(this, EventArgs.Empty);
+        }
 
         public void SetDevExperiments(bool cacheElements, bool cacheGroup, bool disableGlow)
         {
@@ -639,6 +704,8 @@ namespace WinRinglight
         public void UpdateMonitorSetup()
         {
             if (!this.IsLoaded) return;
+            // Layout/fullscreen changes retain the existing WPF animations.
+            if (_compositionBackend != null) StopComposition("Display or fullscreen changed; WPF fallback active.");
 
             // WICHTIG: Die Liste wird ganz oben deklariert, damit sie überall gültig ist!
             System.Collections.Generic.List<Rect> targetRects = new System.Collections.Generic.List<Rect>();
@@ -793,6 +860,11 @@ namespace WinRinglight
         private void ApplyRingAppearance(double thickness, double kelvin)
         {
             _displayedTemperature = kelvin;
+            if (_compositionBackend != null)
+            {
+                try { _compositionBackend.SetRing((float)thickness, Config.Current.VisualStyleIndex == 0, kelvin); }
+                catch (Exception ex) { FailComposition(ex); }
+            }
             foreach (var border in _activeBorders)
             {
                 border.BorderThickness = new Thickness(thickness);

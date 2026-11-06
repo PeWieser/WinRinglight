@@ -73,3 +73,8 @@ Stand: 2026-11-06. Vor weiterer Arbeit aktualisieren. Nutzer möchte laufend üb
 ## Composition-Prototyp: Klickdurchleitung
 - Nutzer hat Prototyp 988a081 auf eigener Hardware getestet: Optik und Capture-Ausschluss funktionieren, GPU maximal etwa 9 %, aber Klicks gehen nicht durch. Nutzermessung, keine standardisierte FPS-/DWM-Messung.
 - Versuch: Overlay-HWND erhält zusätzlich WS_EX_LAYERED; SetLayeredWindowAttributes mit voller globaler Deckkraft aktiviert Layered-Verhalten, WS_EX_TRANSPARENT soll Hit-Tests an darunterliegende Fenster durchreichen. Kombination mit WS_EX_NOREDIRECTIONBITMAP und Composition ist experimentell; erfolgreiche Kompilierung belegt weder Klickdurchleitung noch Transparenz, Performance oder Capture-Ausschluss. Falls sie scheitert, Architektur separat untersuchen statt als behoben ausgeben.
+
+## Integration: Nutzerfreigabe
+- Nutzer bestätigt Prototyp 9d1c54f: Klickdurchleitung, Darstellung, Aufnahme-Ausschluss grün; niedrige GPU-Last. Möchte Integration bei Erhalt aller Funktionen und vorherigen Plan. Plan und Prüfmatrix in `docs/agent/COMPOSITION-INTEGRATION.md`.
+- Integration zunächst nicht standardmäßig, sondern kontrollierbar und mit WPF-Fallback. Ein Ein-Monitor-Prototyp belegt weder Mehrmonitor, gemischte DPI noch Spielverhalten; nicht als abgeschlossen ausgeben.
+- Integrationsschritt 1: separater Dev-Schalter in bestehender App. Nur ein Monitor, 100%-DPI, ungespannt, außerhalb Vollbild; sonst WPF. Capture-Ausschluss vor Anzeigen des neuen HWND; bei Fehler WPF. Stil-, Vollbild- oder Monitorwechsel führt aktuell bewusst zu WPF-Fallback, damit vorhandene Animationen erhalten bleiben. Details und Abnahmeplan: `docs/agent/COMPOSITION-INTEGRATION.md`. Noch kein vollständiger Ersatz und noch nicht auf Nutzergerät getestet.

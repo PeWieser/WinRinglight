@@ -96,6 +96,10 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "DevComposition", new Dictionary<string, string> {
+                { "de", "Composition-Renderer testen (experimentell)" },
+                { "en", "Test Composition renderer (experimental)" }
+            }},
             { "DevTitle", new Dictionary<string, string> {
                 { "de", "Temporäre Rendering-Experimente" }, { "en", "Temporary rendering experiments" }
             }},

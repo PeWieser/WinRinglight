@@ -18,6 +18,7 @@ namespace WinRinglight
 
         private System.Windows.Threading.DispatcherTimer _updateTimer;
         private DateTime _lastRender = DateTime.MinValue;
+        private bool _updatingCompositionControl;
 
         public SettingsWindow(MainWindow mainWindow)
         {
@@ -39,6 +40,9 @@ namespace WinRinglight
             TabSystem.Header = Config.GetText("TabSystem");
             TabPerformance.Header = Config.GetText("TabPerformance");
             LblDevTitle.Text = Config.GetText("DevTitle");
+            LblDevComposition.Text = Config.GetText("DevComposition");
+            _mainWindow.DevCompositionChanged += CompositionStateChanged;
+            CompositionStateChanged(null, EventArgs.Empty);
             LblDevDescription.Text = Config.GetText("DevDescription");
             LblDevElementCache.Text = Config.GetText("DevElementCache");
             LblDevGroupCache.Text = Config.GetText("DevGroupCache");
@@ -203,6 +207,23 @@ namespace WinRinglight
             }
             _updateTimer.Stop();
             _updateTimer.Start();
+        }
+
+        private void Composition_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded || _updatingCompositionControl) return;
+            _mainWindow.SetCompositionExperiment(ChkDevComposition.IsChecked == true);
+        }
+
+        private void CompositionStateChanged(object? sender, EventArgs e)
+        {
+            _updatingCompositionControl = true;
+            try
+            {
+                ChkDevComposition.IsChecked = _mainWindow.DevCompositionActive;
+                LblCompositionStatus.Text = _mainWindow.DevCompositionStatus;
+            }
+            finally { _updatingCompositionControl = false; }
         }
 
         private void DevExperiment_Changed(object sender, RoutedEventArgs e)
@@ -436,7 +457,7 @@ namespace WinRinglight
         protected override void OnClosed(EventArgs e)
         {
             Config.Save();
-
+            _mainWindow.DevCompositionChanged -= CompositionStateChanged;
             base.OnClosed(e);
         }
     }
