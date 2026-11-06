@@ -20,6 +20,7 @@
     <Compile Include="..\WinRinglight\CursorThrottle.cs" Link="CursorThrottle.cs" />
     <Compile Include="..\WinRinglight\IdlePolicy.cs" Link="IdlePolicy.cs" />
     <Compile Include="..\WinRinglight\RingGlow.cs" Link="RingGlow.cs" />
+    <Compile Include="..\WinRinglight\Config.cs" Link="Config.cs" />
   </ItemGroup>
 
 </Project>
