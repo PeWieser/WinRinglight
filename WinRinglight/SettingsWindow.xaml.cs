@@ -208,7 +208,7 @@ namespace WinRinglight
 
         private void CursorFps_Changed(object sender, RoutedEventArgs e) => ApplyCursorFps();
 
-        private void CursorFps_KeyDown(object sender, KeyEventArgs e)
+        private void CursorFps_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
