@@ -104,11 +104,19 @@ jobs:
           $out = "glow.md"
           "## Optik des Saums (gerendert, gemessen)" | Out-File -FilePath $out -Encoding utf8
           "" | Out-File -FilePath $out -Append -Encoding utf8
-          dotnet run --project tools/GlowPreview/GlowPreview.csproj -c Release -v quiet -- glowpreview 2>&1 |
-            Out-File -FilePath $out -Append -Encoding utf8
-          "glow_exit=$LASTEXITCODE" >> $env:GITHUB_OUTPUT
+          $log = dotnet run --project tools/GlowPreview/GlowPreview.csproj -c Release -v quiet -- glowpreview 2>&1
+          $code = $LASTEXITCODE
+          $log | Out-File -FilePath $out -Append -Encoding utf8
+          "glow_exit=$code" >> $env:GITHUB_OUTPUT
           Get-Content $out
-          Get-ChildItem glowpreview -ErrorAction SilentlyContinue | Select-Object Name, Length
+
+          # Ergebnis in die Job-Zusammenfassung (ohne Markdown-Rendering-Fallen
+          # wie 01. der Matrix - deshalb hier mit -NoNewline formatiert).
+          if ($log) {
+            Get-Content $out -Raw | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+          Write-Host "----- MASZ-WERTE -----"
+          $log | ForEach-Object { Write-Host $_ }
 
       - name: Optik-Bilder hochladen
         if: always() && steps.build.outputs.build_exit == '0'
