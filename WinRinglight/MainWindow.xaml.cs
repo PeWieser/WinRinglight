@@ -565,8 +565,55 @@ namespace WinRinglight
             border.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
         }
 
+        /// <summary>
+        /// Animiert den Glow genauso wie den Kern, damit beide synchron bleiben.
+        /// Die vier Verlaufsflaechen selbst bleiben dabei unveraendert - nur die
+        /// Position und Groesse des Canvas wandern.
+        /// </summary>
+        private void AnimateGlowToRect(Canvas glow, Rect targetRect, bool isAppleStyle)
+        {
+            double targetX = targetRect.X;
+            double targetY = targetRect.Y;
+            double targetW = targetRect.Width;
+            double targetH = targetRect.Height;
+
+            if (isAppleStyle)
+            {
+                // Gleicher Innenabstand wie beim Kern (MainWindow: targetX/Y += 20).
+                targetX += 20;
+                targetY += 20;
+                targetW -= 40;
+                targetH -= 40;
+            }
+
+            var duration = TimeSpan.FromSeconds(0.4);
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
+
+            var marginAnim = new ThicknessAnimation
+            {
+                To = new Thickness(targetX, targetY, 0, 0),
+                Duration = duration,
+                EasingFunction = ease,
+            };
+            var widthAnim = new DoubleAnimation { To = targetW, Duration = duration, EasingFunction = ease };
+            var heightAnim = new DoubleAnimation { To = targetH, Duration = duration, EasingFunction = ease };
+
+            Timeline.SetDesiredFrameRate(marginAnim, 60);
+            Timeline.SetDesiredFrameRate(widthAnim, 60);
+            Timeline.SetDesiredFrameRate(heightAnim, 60);
+
+            glow.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
+            glow.BeginAnimation(FrameworkElement.WidthProperty, widthAnim);
+            glow.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
+        }
+
         public void ApplyStyleLive(bool isAppleStyle)
         {
+            foreach (var glow in _glowPanels)
+            {
+                AnimateGlowToRect(glow, (Rect)glow.Tag, isAppleStyle);
+            }
+
             foreach (var border in _coreBorders)
             {
                 Rect baseRect = (Rect)border.Tag;
@@ -703,19 +750,16 @@ namespace WinRinglight
                     var rect = layout.Rings[i];
 
                     var glow = _glowPanels[i];
-                    glow.Width = rect.Width;
-                    glow.Height = rect.Height;
-                    glow.Margin = new Thickness(rect.X, rect.Y, 0, 0);
-                    glow.Tag = rect;
-
                     var core = _coreBorders[i];
+
+                    glow.Tag = rect;
                     core.Tag = rect;
 
-                    // Der Glow wird NICHT animiert und NICHT bei jeder
-                    // Positionsänderung neu gebaut - nur wenn sich etwas
-                    // Sichtbares ändert (Größe/Dicke/Farbe). Die Pruefung
-                    // steckt in ApplySettingsLive weiter unten.
+                    // WICHTIG fuer die Fluessigkeit: Glow und Kern muessen
+                    // gemeinsam wandern. Wuerde der Kern animieren und der Glow
+                    // springen, sieht man einen Versatz.
                     AnimateBorderToRect(core, rect, isApple);
+                    AnimateGlowToRect(glow, rect, isApple);
                 }
             }
         }
