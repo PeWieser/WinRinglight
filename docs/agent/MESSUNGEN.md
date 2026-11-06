@@ -101,3 +101,18 @@ Messung: Task-Manager → Details → `WinRinglight.exe`, 60 s beobachten.
 | 42246645787 | 4340b00 | ✅ | Bench zeigt 5,8× |
 | 42247801523 | ceb0520 | ✅ | **67 grün** |
 | 42249044614 | ac8539e | ✅ | **67 grün, Glow animiert synchron** |
+
+## CPU auf echter Hardware (Nutzer-Messung, Phase 1–4)
+
+| Zustand | CPU |
+|---|---|
+| Ringlicht aus / Stillstand | **0 %** |
+| Ringlicht an, Maus ruhig | **~0,1 %** |
+
+Gemessen vom Nutzer nach Phase 4, WinRinglight-portable-8/10.
+Damit ist das Ziel "im Stillstand passiert nichts" auf echter Hardware
+bestaetigt: keine Dauerlast, kein Render-Takt, kein Timer.
+
+Hinweis: Die CI kann Rechenzeit pro Bild messen (RenderBench), aber keine
+echte CPU-Last - diese Werte sind deshalb die einzige Quelle fuer den
+Vergleich vorher/nachher auf dem Geraet des Nutzers.
