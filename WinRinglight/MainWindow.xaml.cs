@@ -111,14 +111,15 @@ namespace WinRinglight
         private const int HOTKEY_ID = 9000;
 
         private DispatcherTimer? _webcamTimer;
+        private DispatcherTimer? _cursorTimer;
         private System.Windows.Forms.NotifyIcon? _trayIcon;
 
         private bool _isRinglightOn = false;
         private bool _lastWebcamState = false;
 
+        private bool _hasCursorPosition;
         private int _lastMouseX = -1;
         private int _lastMouseY = -1;
-        private DateTime _lastMaskUpdate = DateTime.MinValue;
 
         private Win32Point _mousePt = new Win32Point();
 
@@ -155,6 +156,12 @@ namespace WinRinglight
             _fullscreenTimer = new DispatcherTimer();
             _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(50);     //check for fullscreen changes
             _fullscreenTimer.Tick += FullscreenTimer_Tick;
+
+            _cursorTimer = new DispatcherTimer(DispatcherPriority.Render)
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _cursorTimer.Tick += UpdateCursorCutout;
 
             SetupTrayIcon();
         }
@@ -206,6 +213,9 @@ namespace WinRinglight
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
+            _cursorTimer?.Stop();
+            _webcamTimer?.Stop();
+            _fullscreenTimer?.Stop();
             _trayIcon?.Dispose();
             base.OnClosed(e);
         }
@@ -226,8 +236,6 @@ namespace WinRinglight
             UpdateMonitorSetup();
 
             RegisterHotkeyFromString(Config.Current.HotkeyText);
-
-            CompositionTarget.Rendering += OnRendering;
 
             _webcamTimer?.Start();
 
@@ -303,6 +311,19 @@ namespace WinRinglight
             if (_isRinglightOn == turnOn) return;
 
             _isRinglightOn = turnOn;
+
+            if (turnOn)
+            {
+                // Force an update even if the cursor returned to its previous position
+                // while the light was off, before the fade-in begins.
+                _hasCursorPosition = false;
+                UpdateCursorCutout(null, EventArgs.Empty);
+                _cursorTimer?.Start();
+            }
+            else
+            {
+                _cursorTimer?.Stop();
+            }
 
             DoubleAnimation fadeAnimation = new DoubleAnimation
             {
@@ -433,17 +454,15 @@ namespace WinRinglight
         }
 
 
-        private void OnRendering(object? sender, EventArgs e)
+        private void UpdateCursorCutout(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
 
             if (GetCursorPos(ref _mousePt))
             {
-                if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
+                if (_hasCursorPosition && _mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
 
-                if ((DateTime.Now - _lastMaskUpdate).TotalMilliseconds < 16) return;    //change at most every ~16ms (60fps) to avoid excessive CPU usage
-                _lastMaskUpdate = DateTime.Now;
-
+                _hasCursorPosition = true;
                 _lastMouseX = _mousePt.X;
                 _lastMouseY = _mousePt.Y;
 
