@@ -34,17 +34,37 @@ Der größte Einzelposten. Fenster ist heute immer `VirtualScreen*` groß.
 **Erwartung:** Bei „1 von 3 Monitoren" sinkt die Fensterfläche um Faktor 2–3.
 Bei 2× 4K gespannt bleibt sie gleich – dort bringt Phase 2 den Gewinn.
 
-## Phase 2 – Maske von der Wurzel auf die Ringe  ← **als Nächstes**
+## Phase 2 – ~~Maske von der Wurzel auf die Ringe~~ ❌ **VERWORFEN**
+
+**Warum verworfen (nachgerechnet, vor dem Bauen):**
+Eine `OpacityMask` wirkt in WPF auf die **Bounds** eines Elements, nicht auf die
+gemalten Pixel. Eine `Border`, die den ganzen Monitor umrahmt, hat
+Bounds = ganzer Monitor. Die Maske dorthin zu verschieben bringt **0 %**.
+Auch das Aufteilen in 4 Segmente pro Ring ändert die Summe der Bounds nicht.
+
+**Nebenbefund, der wichtiger ist:** Der Masken-Verlauf ist mit Radius 432 px
+(40 % der Bildschirmhöhe) so groß, dass der Ring nur in einem 888 × 48 px
+großen Streifen (2 % der Fläche) *nicht* berührt wird. Die Maske wirkt also
+praktisch immer – sie lässt sich in WPF nicht verkleinern, nur seltener
+aktualisieren. Das ist Phase 2 (neu).
+
+## Phase 2 (neu) – seltener neu zeichnen, Dauerläufer schlafen legen  ← **✅ erledigt**
 
 | | Aufgabe | Status |
 |---|---|---|
-| 2.1 | `OpacityMask` je Border statt auf `MainGrid` (gleiche Koordinaten) | ☐ |
-| 2.2 | Prüfen: sitzt das Loch noch exakt über der Maus? (Rechnung + Log) | ☐ |
-| 2.3 | Nur noch die Bandfläche wird invalidiert (Messwert notieren) | ☐ |
+| 2a.1 | `CursorThrottle`: Mindestabstand 33 ms + tote Zone 2 DIP | ✅ |
+| 2a.2 | In `OnRendering` eingebaut, ersetzt die alte 16-ms-Sperre | ✅ |
+| 2a.3 | Beim Einschalten sofort zeichnen (`Reset()`) | ✅ |
+| 2b.1 | `IdlePolicy`: Timer läuft nur, wenn er etwas bewirken kann | ✅ |
+| 2b.2 | Teurer Z-Order-Walk max. 1×/s statt 20×/s | ✅ |
+| 2b.3 | Zustand wird nur von einem echten Walk überschrieben | ✅ |
+| 2b.4 | 45 Tests grün | ✅ |
 
-**Erwartung:** Invalidierte Fläche von 100 % auf ~25 % der Fensterfläche.
+**Gemessen (nicht geschätzt):** 60 Eingaben/s → 20 Neuzeichnungen (−67 %).
+Im Leerlauf 20 Timer-Ticks/s → 1 Tick/s (−95 %). Bei 30 Hz Eingabe geht
+nichts verloren.
 
-## Phase 3 – Weichzeichner durch Verläufe ersetzen
+## Phase 3 – Weichzeichner durch Verläufe ersetzen  ← **als Nächstes**
 
 | | Aufgabe | Status |
 |---|---|---|

@@ -74,6 +74,37 @@ einen Kommentar mit Build-Status, Fehler-/Warnungszahl und Testergebnis.
   setzt das Fenster per `SetWindowPos` in **physischen Pixeln**, und rechnet
   Cursor-Koordinaten in DIP um. Schalter: `Config.ShrinkWindowToUsedArea`.
 
+## 3c. Phase 2: verworfener Plan und die Lehre daraus
+
+**Der Plan war falsch.** Ich wollte die `OpacityMask` von `MainGrid` auf die
+einzelnen Borders verschieben, mit der Begründung "dann wird nur noch die
+Bandfläche invalidiert".
+
+**Warum das falsch ist:** `OpacityMask` wirkt in WPF auf die **Bounds** des
+Elements, nicht auf die tatsächlich gemalten Pixel. Eine `Border`, die einen
+Monitor umrahmt, hat Bounds = ganzer Monitor. Ergebnis: 0 % Gewinn.
+Auch das Zerlegen in 4 Segmente pro Ring bringt nichts, weil die Summe der
+Segment-Bounds wieder die volle Fläche ist.
+
+**Lehre:** Bei WPF-Effekten (OpacityMask, Effect, Clip) immer fragen:
+"Was sind die **Bounds** des Elements?" Nicht "was sieht man davon?".
+Effects werden über die Bounds auf eine Zwischenfläche gerechnet.
+
+**Was stattdessen gebaut wurde (Phase 2 neu):**
+* `CursorThrottle` – entscheidet, ob eine Bewegung ein Neuzeichnen rechtfertigt.
+  - 33 ms Mindestabstand → **20 statt 60 Neuzeichnungen/s** (errechnet)
+  - 2 DIP tote Zone gegen Maus-Zittern
+  - exakte Gleichheit ist immer ein Skip (auch bei deadZone = 0)
+  - `Reset()` beim Einschalten, damit das Loch sofort sitzt
+* `IdlePolicy` – Timer läuft nur, wenn er etwas bewirken kann.
+  - aus + keine Webcam-Automatik → 1 Tick/s statt 20/s
+  - teurer Z-Order-Walk (DwmGetWindowAttribute pro Fenster) max. 1×/s
+  - **Fallstrick:** wird der Walk übersprungen, darf `isFullscreenNow` NICHT
+    auf false zurückgesetzt werden – sonst flackert der Zustand. Gelöst:
+    Zustand vom letzten Walk übernehmen.
+  - **Fallstrick 2:** `ShouldWalk(0,0)` war false, weil 0−0 < 1000. Sonderfall
+    "noch nie gemessen" muss sofort messen.
+
 ## 4. Fehler, die ich schon gemacht habe (nicht wiederholen)
 
 * **CI-Workflow, der eine WPF-App unter `ubuntu-latest` baut** → geht nicht.
@@ -110,6 +141,17 @@ einen Kommentar mit Build-Status, Fehler-/Warnungszahl und Testergebnis.
 * **Kein `sed -i` mit Sonderzeichen in YAML/Code** – stattdessen ein
   Python-Skript schreiben und mit `assert` prüfen, ob das Muster gefunden wurde.
   (Ein `sed`-Befehl hat hier still nichts geändert.)
+* **`const` nicht aus Methodenaufrufen initialisieren** (CS0133). Nur echte
+  Literale/Konstanten.
+* **Effekt-Reichweite = Bounds, nicht sichtbare Pixel.** Siehe Abschnitt 3c.
+* **Beim Einbremsen von Timern immer prüfen, wer den Zustand sonst zurücksetzt.**
+  Ein übersprungener Durchlauf darf keinen Zustand auf "false" setzen.
+  (Hätte das Ringlicht bei jedem zweiten Tick flackern lassen.)
+* **Test-Erwartungen immer selbst nachrechnen**, nicht raten.
+  Zweimal war der Code richtig und der Test falsch:
+  - 60 Ereignisse à 16 ms bei 33-ms-Schwelle = **20** Durchlässe (jedes dritte),
+    nicht 30.
+  - Taskleiste vergessen → DIP-Höhe 1580/1.5 statt 1080.
 
 ## 5. Regeln für diese Arbeit
 

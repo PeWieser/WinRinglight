@@ -29,6 +29,26 @@ Erster Versuch hatte hier **0,91×** – also *schlechter*. Ursache: der Glow-Ra
 wurde über den Bildschirmrand hinaus addiert. Behoben durch Clamp auf die echte
 Bildschirmfläche (`Rect.Intersect`), plus Test `FensterIstNieGroesserAlsVorher`.
 
+## Phase 2 – Neuzeichnungen und Timer-Ticks (aus Tests, Commit `424cb9e`)
+
+| Größe | vorher | nachher | Faktor |
+|---|---|---|---|
+| Neuzeichnungen bei 60 Eingaben/s | 60 | **20** | −67 % |
+| Neuzeichnungen bei 30 Eingaben/s | 30 | **30** | 0 % (nichts verloren) |
+| Timer-Ticks im Leerlauf (Ring aus) | 20/s | **1/s** | −95 % |
+| Z-Order-Walks pro Sekunde | 20 | **1** | −95 % |
+
+Die ersten beiden Zeilen sind aus `CursorThrottleTests`, die letzten beiden aus
+`IdlePolicyTests`. Beides sind Rechenwerte, keine Messungen am Gerät – aber sie
+sind exakt, weil die Logik deterministisch ist.
+
+## Verworfener Plan
+
+Phase 2 sollte ursprünglich die Loch-Maske auf die Ringe verschieben.
+**Nachgerechnet: 0 % Gewinn**, weil `OpacityMask` auf die Bounds wirkt und die
+Bounds einer rahmenfüllenden `Border` der ganze Monitor sind.
+Siehe `PLAN.md`, Phase 2 (verworfen).
+
 ## CPU am Zielgerät
 
 | Zustand | vorher | nachher | Datum | Gerät |
@@ -49,3 +69,8 @@ Messung: Task-Manager → Details → `WinRinglight.exe`, 60 s beobachten.
 | 42238001924 | 5395f79 | ❌ Workflow-Datei (`-eq` statt `==`) | – |
 | 42238104184 | e6dc1e7 | ✅ | 15 grün, Report zeigt 0,91× |
 | 42238446769 | fe7b486 | ✅ | **22 grün, 1,95–2,86×** |
+| 42240812794 | 0750769 | ❌ | 32 grün, 3 rot (Throttle-Logik) |
+| 42241094037 | 7aae4a4 | ✅ | 35 grün |
+| 42241553898 | bd38211 | ❌ Build | CS0133 `const` aus Methodenaufruf |
+| 42241780193 | cfd6c66 | ❌ | 43 grün, 1 rot (`ShouldWalk(0,0)`) |
+| 42242012846 | 424cb9e | ✅ | **45 grün** |
