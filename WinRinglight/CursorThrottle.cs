@@ -97,10 +97,15 @@ namespace WinRinglight
                     return false;
                 }
 
-                // 2) Tote Zone
+                // 2) Tote Zone.
+                //    Exakte Gleichheit ist immer ein Skip, auch bei deadZone = 0 -
+                //    sonst wuerde ein stehender Cursor endlos neu gezeichnet.
                 double dx = xDip - _lastX;
                 double dy = yDip - _lastY;
-                if ((dx * dx) + (dy * dy) < _deadZoneDip * _deadZoneDip)
+                double distSq = (dx * dx) + (dy * dy);
+                double deadSq = _deadZoneDip * _deadZoneDip;
+
+                if (distSq == 0 || distSq <= deadSq)
                 {
                     SkippedCount++;
                     return false;

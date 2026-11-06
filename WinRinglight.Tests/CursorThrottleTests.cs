@@ -106,21 +106,25 @@ namespace WinRinglight.Tests
         }
 
         /// <summary>
-        /// Der eigentliche Zweck: bei 60 Eingaben pro Sekunde sollen nur noch
-        /// ~30 Neuzeichnungen übrig bleiben (halbe Arbeit).
+        /// Der eigentliche Zweck: bei 60 Eingaben pro Sekunde bleibt nur ein
+        /// Drittel der Neuzeichnungen übrig.
+        ///
+        /// Achtung, Rechnung: die Ereignisse kommen alle 16 ms. Die Schwelle ist
+        /// 33 ms. Nach einem Update bei t=0 ist das nächste Ereignis bei 16 ms zu
+        /// früh, 32 ms zu früh, erst 48 ms darf wieder. Das ergibt genau jedes
+        /// dritte Ereignis -> 20 von 60 (-67 % Arbeit), nicht die Hälfte.
         /// </summary>
         [Fact]
-        public void SechzigBewegungenProSekunde_WerdenHalbiert()
+        public void SechzigBewegungenProSekunde_WerdenGedrosselt()
         {
             var t = new CursorThrottle(minIntervalMs: 33, deadZoneDip: 0);
 
             for (int i = 0; i < 60; i++)
             {
-                // 60 Ereignisse in einer Sekunde, Cursor wandert langsam
                 t.ShouldUpdate(100 + i * 5, 100 + i * 5, i * 16);
             }
 
-            Assert.InRange(t.UpdateCount, 25, 32);
+            Assert.Equal(20, t.UpdateCount);
         }
 
         /// <summary>Bei 30 Hz Eingabe darf nichts verloren gehen.</summary>
