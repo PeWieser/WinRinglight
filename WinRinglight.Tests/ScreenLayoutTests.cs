@@ -8,6 +8,37 @@ namespace WinRinglight.Tests
 {
     public class ScreenLayoutTests
     {
+        /// <summary>
+        /// Selbsttest fuer das CI-Log: zeigt fuer typische Setups, wie gross das
+        /// Fenster vorher und nachher ist. Kein Assert, nur Ausgabe.
+        /// </summary>
+        [Fact]
+        public void Selbsttest_TypischeSetups()
+        {
+            var cases = new (string Name, MonitorInfo[] Monitors, int[] Selected)[]
+            {
+                ("1x 1080p", new[] { Mon(0, 0, 1920, 1080) }, new[] { 0 }),
+                ("1 von 2 (1080p)", new[] { Mon(0, 0, 1920, 1080), Mon(1920, 0, 1920, 1080) }, new[] { 0 }),
+                ("1 von 3 (1080p)", new[] { Mon(0, 0, 1920, 1080), Mon(1920, 0, 1920, 1080), Mon(3840, 0, 1920, 1080) }, new[] { 1 }),
+                ("2 gespannt (4K)", new[] { Mon(0, 0, 3840, 2160), Mon(3840, 0, 3840, 2160) }, new[] { 0, 1 }),
+            };
+
+            foreach (var c in cases)
+            {
+                double desktop = 0;
+                foreach (var m in c.Monitors) desktop += m.Bounds.Width * m.Bounds.Height;
+
+                var l = ScreenLayout.Compute(c.Monitors, c.Selected, c.Name.Contains("gespannt"), false, 1.0);
+                double window = l.WindowPixels.Width * l.WindowPixels.Height;
+                double ratio = desktop > 0 ? window / desktop : 0;
+
+                Console.WriteLine("[SELFTEST] " + c.Name.PadRight(28) +
+                                  " Desktop " + desktop.ToString("F0") +
+                                  " px^2 | Fenster " + window.ToString("F0") +
+                                  " px^2 | " + (ratio * 100).ToString("F1") + " %");
+            }
+        }
+
         private const double Pad = ScreenLayout.GlowPaddingDip;
 
         private static MonitorInfo Mon(double x, double y, double w, double h, double taskbar = 40)

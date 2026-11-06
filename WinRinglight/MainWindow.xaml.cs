@@ -38,6 +38,15 @@ namespace WinRinglight
 
         [DllImport("user32.dll")]
         public static extern uint SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
         public const uint WDA_NONE = 0x00000000;
         public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011; // Win10 2004+ Feature
 
@@ -451,7 +460,11 @@ namespace WinRinglight
                 Win32Point localPt = _mousePt;
                 ScreenToClient(hwnd, ref localPt);
 
-                System.Windows.Point relMouse = new System.Windows.Point(localPt.X, localPt.Y);
+                // GetCursorPos/ScreenToClient liefern PHYSISICHE Pixel.
+                // WPF-Brushes rechnen in DIP, deshalb umrechnen.
+                System.Windows.Point cursorPx = new System.Windows.Point(localPt.X, localPt.Y);
+                System.Windows.Point relMouse = ScreenLayout.ToWindowDip(
+                    cursorPx, _layout.WindowPixels, _layout.Scale);
 
                 CursorCutoutMask.Center = relMouse;
                 CursorCutoutMask.GradientOrigin = relMouse;
@@ -511,62 +524,93 @@ namespace WinRinglight
 
         private System.Collections.Generic.List<System.Windows.Controls.Border> _activeBorders = new System.Collections.Generic.List<System.Windows.Controls.Border>();
 
+        /// <summary>
+        /// Alle Monitore als reine Daten (physische Pixel), damit die Layout-Rechnung
+        /// ohne UI und ohne WinForms-Abhaengigkeit getestet werden kann.
+        /// </summary>
+        private static System.Collections.Generic.List<MonitorInfo> GetMonitorInfos()
+        {
+            var list = new System.Collections.Generic.List<MonitorInfo>();
+            foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+            {
+                System.Drawing.Rectangle b = screen.Bounds;
+                System.Drawing.Rectangle w = screen.WorkingArea;
+                list.Add(new MonitorInfo(
+                    new Rect(b.X, b.Y, b.Width, b.Height),
+                    new Rect(w.X, w.Y, w.Width, w.Height)));
+            }
+            return list;
+        }
+
+        /// <summary>DPI-Faktor des aktuellen Fensters (1.0 = 100 %).</summary>
+        private double GetDpiScale()
+        {
+            try
+            {
+                var source = PresentationSource.FromVisual(this);
+                if (source?.CompositionTarget != null)
+                {
+                    return source.CompositionTarget.TransformToDevice.M11;
+                }
+            }
+            catch { }
+            return 1.0;
+        }
+
+        private WindowLayout _layout = new WindowLayout(new Rect(0, 0, 0, 0),
+            System.Array.Empty<Rect>(), 1.0, true);
+
         public void UpdateMonitorSetup()
         {
             if (!this.IsLoaded) return;
 
-            // WICHTIG: Die Liste wird ganz oben deklariert, damit sie überall gültig ist!
-            System.Collections.Generic.List<Rect> targetRects = new System.Collections.Generic.List<Rect>();
+            var monitors = GetMonitorInfos();
 
-            if (Config.Current.IsSpanned)
+            WindowLayout layout;
+            if (Config.ShrinkWindowToUsedArea)
             {
-                double minX = double.MaxValue, minY = double.MaxValue;
-                double maxX = double.MinValue, maxY = double.MinValue;
-
-                foreach (var screen in System.Windows.Forms.Screen.AllScreens)
-                {
-                    var wa = screen.WorkingArea;
-                    if (wa.Left < minX) minX = wa.Left;
-                    if (wa.Top < minY) minY = wa.Top;
-                    if (wa.Right > maxX) maxX = wa.Right;
-                    if (wa.Bottom > maxY) maxY = wa.Bottom;
-                }
-
-                double spanW = maxX - minX;
-                double spanH = maxY - minY;
-                double relX = minX - SystemParameters.VirtualScreenLeft;
-                double relY = minY - SystemParameters.VirtualScreenTop;
-
-                targetRects.Add(new Rect(relX, relY, spanW, spanH));
+                layout = ScreenLayout.Compute(
+                    monitors,
+                    Config.Current.SelectedMonitors,
+                    Config.Current.IsSpanned,
+                    _isFullscreenActive,
+                    GetDpiScale());
             }
             else
             {
-                var screens = System.Windows.Forms.Screen.AllScreens;
-                foreach (int index in Config.Current.SelectedMonitors)
-                {
-                    if (index < screens.Length)
-                    {
-                        var s = screens[index];
-                        var rect = _isFullscreenActive ? s.Bounds : s.WorkingArea;
+                // Alter Pfad: Fenster = gesamter virtueller Desktop.
+                layout = ScreenLayout.Compute(
+                    monitors,
+                    Config.Current.SelectedMonitors,
+                    Config.Current.IsSpanned,
+                    _isFullscreenActive,
+                    GetDpiScale());
 
-                        double relX = rect.X - SystemParameters.VirtualScreenLeft;
-                        double relY = rect.Y - SystemParameters.VirtualScreenTop;
-                        targetRects.Add(new Rect(relX, relY, rect.Width, rect.Height));
-                    }
-                }
+                // Absichtlich auf den vollen Desktop aufblasen.
+                layout = new WindowLayout(
+                    new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                             SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight),
+                    layout.Rings, layout.Scale, layout.IsFallback);
             }
 
-            if (_activeBorders.Count != targetRects.Count * 2)
+            if (layout.IsFallback)
+            {
+                // Keine gueltige Monitorauswahl: nichts anfassen.
+                return;
+            }
+
+            _layout = layout;
+
+            // Fenster exakt auf die genutzte Flaeche setzen (physische Pixel,
+            // deshalb ueber die HwndSource, nicht ueber Left/Top/Width/Height in DIP).
+            ApplyWindowRect(layout.WindowPixels);
+
+            if (_activeBorders.Count != layout.Rings.Count * 2)
             {
                 _activeBorders.Clear();
                 MainGrid.Children.Clear();
 
-                this.Left = SystemParameters.VirtualScreenLeft;
-                this.Top = SystemParameters.VirtualScreenTop;
-                this.Width = SystemParameters.VirtualScreenWidth;
-                this.Height = SystemParameters.VirtualScreenHeight;
-
-                foreach (var r in targetRects)
+                foreach (var r in layout.Rings)
                 {
                     AddRinglight(r.X, r.Y, r.Width, r.Height);
                 }
@@ -578,9 +622,9 @@ namespace WinRinglight
             {
                 bool isApple = Config.Current.VisualStyleIndex == 0;
 
-                for (int i = 0; i < targetRects.Count; i++)
+                for (int i = 0; i < layout.Rings.Count; i++)
                 {
-                    var rect = targetRects[i];
+                    var rect = layout.Rings[i];
                     var glowBorder = _activeBorders[i * 2];
                     var coreBorder = _activeBorders[i * 2 + 1];
 
@@ -591,6 +635,27 @@ namespace WinRinglight
                     AnimateBorderToRect(coreBorder, rect, isApple);
                 }
             }
+        }
+
+        /// <summary>
+        /// Setzt das Fensterrechteck in physischen Pixeln. WPF rechnet Left/Top/Width/Height
+        /// in DIP, deshalb bei Skalierung != 100 % unbrauchbar fuer exakte Monitorgrenzen.
+        /// </summary>
+        private void ApplyWindowRect(Rect pixels)
+        {
+            try
+            {
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                SetWindowPos(hwnd, IntPtr.Zero,
+                    (int)System.Math.Round(pixels.X),
+                    (int)System.Math.Round(pixels.Y),
+                    (int)System.Math.Round(pixels.Width),
+                    (int)System.Math.Round(pixels.Height),
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            catch { }
         }
 
         public double GetSmartTemperature()

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -43,6 +43,13 @@ namespace WinRinglight
 
         public static double CursorCutoutRadiusPercent = 0.40;
         public static double CursorBlurRadiusPercent = 0.80;
+
+        // --- Performance-Schalter (Phase 1) ---
+        // Wenn true, ist das Overlay-Fenster nur noch so gross wie die genutzte
+        // Flaeche statt des gesamten virtuellen Desktops. Optik bleibt gleich,
+        // es wird nur weniger Flaeche neu gezeichnet.
+        // false = altes Verhalten (ganzer Desktop) als Rueckfallebene.
+        public static bool ShrinkWindowToUsedArea = true;
 
         // --- Save Settings ---
         public static void Save()
