@@ -8,6 +8,8 @@ using System.Windows.Media;
 // naechsten neuen Typ zurueck.
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
+using Brush = System.Windows.Media.Brush;
+using Geometry = System.Windows.Media.Geometry;
 
 namespace WinRinglight
 {

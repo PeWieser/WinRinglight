@@ -181,7 +181,8 @@ namespace WinRinglight.Tests
                 System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 228, 24);
 
             var ecke = built.Find(p => p.Piece.Kind == BandPieceKind.TopLeft);
-            Assert.True(ecke.Geometry.Bounds.Width > 10, "Ecke ist zu klein");
+            Assert.NotNull(ecke);
+            Assert.True(ecke!.Geometry.Bounds.Width > 10, "Ecke ist zu klein");
             Assert.True(ecke.Geometry.Bounds.Height > 10, "Ecke ist zu klein");
         }
     }
