@@ -6,6 +6,9 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 
+using Color = System.Windows.Media.Color;
+using Point = System.Windows.Point;
+
 namespace RenderBench
 {
     /// <summary>
@@ -52,6 +55,7 @@ namespace RenderBench
                 Print("mit Maske, ohne Blur ", Measure(s.W, s.H, true, false, false), baseline);
                 Print("mit Maske, mit Blur  ", Measure(s.W, s.H, true, true, false), baseline);
                 Print("mit Maske+Blur+Cache ", Measure(s.W, s.H, true, true, true), baseline);
+                Print("mit Maske+VERLAUF   ", Measure(s.W, s.H, true, false, false, useGradientGlow: true), baseline);
 
                 Console.WriteLine();
             }
@@ -65,7 +69,8 @@ namespace RenderBench
             Console.WriteLine($"  {label} : {ms,8:F2} ms/Bild  ({factor,5:F2}x Basis)");
         }
 
-        private static double Measure(int w, int h, bool useMask, bool useBlur, bool useCache)
+        private static double Measure(int w, int h, bool useMask, bool useBlur, bool useCache,
+            bool useGradientGlow = false)
         {
             var root = new Grid { Width = w, Height = h };
 
@@ -115,7 +120,53 @@ namespace RenderBench
                 };
             }
 
-            root.Children.Add(glow);
+            if (useGradientGlow)
+            {
+                // Genau der neue Aufbau: 4 Rechtecke mit LinearGradientBrush
+                // an den Kanten, kein Effekt, kein Cache.
+                var canvas = new Canvas { Width = w, Height = h, Opacity = 0.55 };
+                double band = Math.Max(6.0, Math.Min(40.0, Thickness * 0.4) / 3.0 * 3.0);
+                double edge = Thickness;
+                double outer = Thickness + band;
+
+                void Strip(double x, double y, double sw, double sh, Point from, Point to)
+                {
+                    var b = new LinearGradientBrush
+                    {
+                        MappingMode = BrushMappingMode.RelativeToBoundingBox,
+                        StartPoint = from,
+                        EndPoint = to,
+                        SpreadMethod = GradientSpreadMethod.Pad,
+                    };
+                    // Profil wie RingGlow.DefaultAlphas
+                    b.GradientStops.Add(new GradientStop(Color.FromArgb(255, color.R, color.G, color.B), 0.0));
+                    b.GradientStops.Add(new GradientStop(Color.FromArgb(213, color.R, color.G, color.B), 0.20));
+                    b.GradientStops.Add(new GradientStop(Color.FromArgb(103, color.R, color.G, color.B), 0.45));
+                    b.GradientStops.Add(new GradientStop(Color.FromArgb(28, color.R, color.G, color.B), 0.70));
+                    b.GradientStops.Add(new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1.0));
+                    b.Freeze();
+
+                    var r = new System.Windows.Shapes.Rectangle
+                    {
+                        Width = sw, Height = sh, Fill = b, IsHitTestVisible = false,
+                    };
+                    Canvas.SetLeft(r, x);
+                    Canvas.SetTop(r, y);
+                    canvas.Children.Add(r);
+                }
+
+                Strip(edge, 0, w - 2 * edge, band, new Point(0, 0), new Point(0, 1));
+                Strip(edge, h - outer, w - 2 * edge, band, new Point(0, 1), new Point(0, 0));
+                Strip(0, edge, band, h - 2 * edge, new Point(0, 0), new Point(1, 0));
+                Strip(w - outer, edge, band, h - 2 * edge, new Point(1, 0), new Point(0, 0));
+
+                root.Children.Add(canvas);
+            }
+            else
+            {
+                root.Children.Add(glow);
+            }
+
             root.Children.Add(new Border
             {
                 Width = w,
