@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -22,6 +22,16 @@ namespace WinRinglight
         public string HotkeyText { get; set; } = "Ctrl + Alt + R";
         public bool HideFromCapture { get; set; } = true;
         public string SupportUrl { get; } = "https://ko-fi.com/melo04";
+
+        // --- Performance-Schalter (in settings.json aenderbar) ---
+        // false = altes Verhalten (Fenster = ganzer Desktop)
+        public bool ShrinkWindowToUsedArea { get; set; } = true;
+
+        // Mindestabstand der Loch-Aktualisierung in ms. 0 = jedes Frame.
+        public double CursorUpdateIntervalMs { get; set; } = 33.0;
+
+        // Tote Zone gegen Maus-Zittern in DIP. 0 = jede Pixelbewegung.
+        public double CursorDeadZoneDip { get; set; } = 2.0;
     }
 
     public static class Config
@@ -43,6 +53,37 @@ namespace WinRinglight
 
         public static double CursorCutoutRadiusPercent = 0.40;
         public static double CursorBlurRadiusPercent = 0.80;
+
+        // --- Performance-Schalter ---
+        // Durchreichen auf die gespeicherten Werte, damit der restliche Code
+        // weiterhin "Config.X" schreiben kann.
+        public static bool ShrinkWindowToUsedArea
+        {
+            get => Current.ShrinkWindowToUsedArea;
+            set => Current.ShrinkWindowToUsedArea = value;
+        }
+
+        public static double CursorUpdateIntervalMs
+        {
+            get
+            {
+                double v = Current.CursorUpdateIntervalMs;
+                if (double.IsNaN(v)) return 33.0;
+                return System.Math.Clamp(v, 0.0, 500.0);
+            }
+            set => Current.CursorUpdateIntervalMs = value;
+        }
+
+        public static double CursorDeadZoneDip
+        {
+            get
+            {
+                double v = Current.CursorDeadZoneDip;
+                if (double.IsNaN(v)) return 2.0;
+                return System.Math.Clamp(v, 0.0, 100.0);
+            }
+            set => Current.CursorDeadZoneDip = value;
+        }
 
         // --- Save Settings ---
         public static void Save()
@@ -66,6 +107,12 @@ namespace WinRinglight
                     string json = File.ReadAllText(FilePath);
                     var data = JsonSerializer.Deserialize<SettingsData>(json);
                     if (data != null) Current = data;
+                }
+                else
+                {
+                    // Beim ersten Start die Datei anlegen, damit man die
+                    // Performance-Schalter ueberhaupt bearbeiten kann.
+                    Save();
                 }
             }
             catch { /* Fallback to defaults */ }

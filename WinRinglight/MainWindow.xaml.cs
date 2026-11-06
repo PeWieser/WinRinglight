@@ -38,6 +38,15 @@ namespace WinRinglight
 
         [DllImport("user32.dll")]
         public static extern uint SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
         public const uint WDA_NONE = 0x00000000;
         public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011; // Win10 2004+ Feature
 
@@ -97,6 +106,12 @@ namespace WinRinglight
         }
 
         private DispatcherTimer? _fullscreenTimer;
+
+        // Ersetzt CompositionTarget.Rendering. Das Event feuerte JEDEN Frame,
+        // auch im Stillstand, und hielt den Render-Takt dauerhaft wach.
+        // Der Timer laeuft nur, wenn das Ringlicht an ist.
+        private DispatcherTimer? _cursorTimer;
+        private bool _cursorTimerRunning;
         private bool _isFullscreenActive = false;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -119,6 +134,12 @@ namespace WinRinglight
         private int _lastMouseX = -1;
         private int _lastMouseY = -1;
         private DateTime _lastMaskUpdate = DateTime.MinValue;
+
+        // Drosselt, wie oft das Loch um die Maus tatsaechlich neu gezeichnet wird.
+        private readonly CursorThrottle _throttle = new CursorThrottle();
+        private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+        private long _lastWalkMs;
+        private bool _fullscreenTimerRunning;
 
         private Win32Point _mousePt = new Win32Point();
 
@@ -155,6 +176,10 @@ namespace WinRinglight
             _fullscreenTimer = new DispatcherTimer();
             _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(50);     //check for fullscreen changes
             _fullscreenTimer.Tick += FullscreenTimer_Tick;
+
+            _cursorTimer = new DispatcherTimer(DispatcherPriority.Render);
+            _cursorTimer.Interval = TimeSpan.FromMilliseconds(33);         // ~30 Hz reicht fuer ein Loch
+            _cursorTimer.Tick += (_, _) => UpdateCursorCutout();
 
             SetupTrayIcon();
         }
@@ -227,12 +252,10 @@ namespace WinRinglight
 
             RegisterHotkeyFromString(Config.Current.HotkeyText);
 
-            CompositionTarget.Rendering += OnRendering;
-
             _webcamTimer?.Start();
 
             ApplyCaptureAffinity();
-            _fullscreenTimer?.Start();
+            UpdateFullscreenTimerState();
 
             FlushMemory();
         }
@@ -304,6 +327,24 @@ namespace WinRinglight
 
             _isRinglightOn = turnOn;
 
+            // Beim Einschalten muss das Loch sofort an der richtigen Stelle sitzen,
+            // nicht erst beim naechsten Mauszucken.
+            _throttle.Reset();
+
+            UpdateCursorTimerState();
+
+            // Beim Einschalten sofort zeichnen - sonst sitzt das Loch fuer die
+            // ersten 33 ms noch an der alten Position (sichtbarer Sprung).
+            if (_isRinglightOn)
+            {
+                UpdateCursorCutout();
+            }
+
+            // Den Vollbild-Timer nur laufen lassen, wenn er etwas bewirken kann:
+            // aus + keine Webcam-Automatik = niemand kann das Ringlicht einschalten,
+            // ausser dem Hotkey (der kommt als Windows-Nachricht, nicht per Timer).
+            UpdateFullscreenTimerState();
+
             DoubleAnimation fadeAnimation = new DoubleAnimation
             {
                 To = _isRinglightOn ? 1.0 : 0.0,
@@ -339,11 +380,71 @@ namespace WinRinglight
             SetWindowDisplayAffinity(hwnd, affinity);
         }
 
+        /// <summary>
+        /// Startet oder stoppt den Vollbild-Timer je nach Zustand.
+        /// Ohne Ringlicht und ohne Webcam-Automatik hat der Timer keine Aufgabe.
+        /// </summary>
+        /// <summary>
+        /// Startet oder stoppt den Cursor-Timer. Aus = kein Timer = kein
+        /// Aufwachen des UI-Threads.
+        /// </summary>
+        private void UpdateCursorTimerState()
+        {
+            if (_cursorTimer == null) return;
+
+            if (_isRinglightOn && !_cursorTimerRunning)
+            {
+                _cursorTimer.Start();
+                _cursorTimerRunning = true;
+            }
+            else if (!_isRinglightOn && _cursorTimerRunning)
+            {
+                _cursorTimer.Stop();
+                _cursorTimerRunning = false;
+            }
+        }
+
+        private void UpdateFullscreenTimerState()
+        {
+            if (_fullscreenTimer == null) return;
+
+            bool shouldRun = IdlePolicy.ShouldRunTimer(_isRinglightOn, Config.Current.AutoWebcam);
+            if (shouldRun && !_fullscreenTimerRunning)
+            {
+                _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(IdlePolicy.IntervalFor(_isRinglightOn));
+                _fullscreenTimer.Start();
+                _fullscreenTimerRunning = true;
+            }
+            else if (!shouldRun && _fullscreenTimerRunning)
+            {
+                _fullscreenTimer.Stop();
+                _fullscreenTimerRunning = false;
+            }
+            else if (shouldRun)
+            {
+                _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(IdlePolicy.IntervalFor(_isRinglightOn));
+            }
+        }
+
         private void FullscreenTimer_Tick(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
 
-            bool isFullscreenNow = false;
+            // Der teure Teil ist der Z-Order-Walk (DwmGetWindowAttribute pro
+            // Fenster, also prozessuebergreifend). Bei 50-ms-Ticks lief er
+            // 20x/s. Er wird jetzt hoechstens 1x/s gemacht; dazwischen ist der
+            // Tick ein reiner Vergleich und kostet nichts.
+            bool doWalk = IdlePolicy.ShouldWalk(_clock.ElapsedMilliseconds, _lastWalkMs);
+            if (doWalk) _lastWalkMs = _clock.ElapsedMilliseconds;
+
+            // Zustand vom letzten Walk uebernehmen; nur ein echter Walk
+            // darf ihn ueberschreiben (sonst wuerde jeder uebersprungene
+            // Tick das Ringlicht faelschlich auf "kein Vollbild" setzen).
+            bool isFullscreenNow = _isFullscreenActive;
+
+            if (doWalk)
+            {
+            isFullscreenNow = false;
             IntPtr currentHwnd = GetTopWindow(IntPtr.Zero);
 
             // Eigene Prozess-ID
@@ -407,6 +508,8 @@ namespace WinRinglight
                 currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
             }
 
+            }   // Ende: nur wenn doWalk
+
             // --- STUFE 2: DER STARTMENÜ-OVERRIDE (Deine Beobachtung!) ---
             // Wir prüfen das Fenster, in dem der Cursor gerade blinkt.
             IntPtr fgHwnd = GetForegroundWindow();
@@ -433,140 +536,242 @@ namespace WinRinglight
         }
 
 
-        private void OnRendering(object? sender, EventArgs e)
+        /// <summary>
+        /// Holt die Cursorposition und aktualisiert das Loch - aber nur, wenn
+        /// es sich lohnt. Wird vom Cursor-Timer aufgerufen, nicht mehr pro Frame.
+        /// </summary>
+        private void UpdateCursorCutout()
         {
             if (!_isRinglightOn) return;
 
-            if (GetCursorPos(ref _mousePt))
+            if (!GetCursorPos(ref _mousePt)) return;
+
+            // Billige Vorpruefung: gar keine Bewegung -> gar keine Arbeit.
+            if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            Win32Point localPt = _mousePt;
+            ScreenToClient(hwnd, ref localPt);
+
+            // GetCursorPos/ScreenToClient liefern PHYSISICHE Pixel.
+            // WPF-Brushes rechnen in DIP, deshalb umrechnen.
+            System.Windows.Point cursorPx = new System.Windows.Point(localPt.X, localPt.Y);
+            System.Windows.Point relMouse = ScreenLayout.ToWindowDip(
+                cursorPx, _layout.WindowPixels, _layout.Scale);
+
+            // Erst hier entscheiden: Zeitabstand + tote Zone.
+            _throttle.MinIntervalMs = Config.CursorUpdateIntervalMs;
+            _throttle.DeadZoneDip = Config.CursorDeadZoneDip;
+
+            if (!_throttle.ShouldUpdate(relMouse.X, relMouse.Y, _clock.ElapsedMilliseconds))
             {
-                if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
-
-                if ((DateTime.Now - _lastMaskUpdate).TotalMilliseconds < 16) return;    //change at most every ~16ms (60fps) to avoid excessive CPU usage
-                _lastMaskUpdate = DateTime.Now;
-
-                _lastMouseX = _mousePt.X;
-                _lastMouseY = _mousePt.Y;
-
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                Win32Point localPt = _mousePt;
-                ScreenToClient(hwnd, ref localPt);
-
-                System.Windows.Point relMouse = new System.Windows.Point(localPt.X, localPt.Y);
-
-                CursorCutoutMask.Center = relMouse;
-                CursorCutoutMask.GradientOrigin = relMouse;
+                return;
             }
+
+            _lastMouseX = _mousePt.X;
+            _lastMouseY = _mousePt.Y;
+
+            CursorCutoutMask.Center = relMouse;
+            CursorCutoutMask.GradientOrigin = relMouse;
         }
 
-        private void AnimateBorderToRect(Border border, Rect targetRect, bool isAppleStyle)
+        /// <summary>
+        /// Animiert ein Canvas auf die Zielgroesse des Kerns (aeusseres
+        /// Ring-Rechteck, inklusive Saum-Platz).
+        /// </summary>
+        private void AnimateBorderToRect(Canvas target, Rect targetRect, bool isAppleStyle)
         {
+            AnimateGlowToRect(target, targetRect, isAppleStyle);
+        }
+
+        /// <summary>
+        /// Animiert den Glow genauso wie den Kern, damit beide synchron bleiben.
+        /// Die vier Verlaufsflaechen selbst bleiben dabei unveraendert - nur die
+        /// Position und Groesse des Canvas wandern.
+        /// </summary>
+        /// <summary>
+        /// Animiert den Glow mit. Wichtig: Animiert werden die **Kernmasse**
+        /// (aeusserer Kasten), nicht die Flaeche des Glow-Canvas - die ist um
+        /// <see cref="RinglightGlowPad"/> groesser. Frueher liefen Kern und Glow
+        /// dadurch auseinander.
+        /// </summary>
+        private void AnimateGlowToRect(Canvas glow, Rect targetRect, bool isAppleStyle)
+        {
+            // WICHTIG: Das Canvas bleibt immer auf dem aeusseren Ring-Rechteck.
+            // Der Innenabstand des Kerns (Apple-Stil) wird NICHT hier abgezogen,
+            // sondern beim Zeichnen des Saums beruecksichtigt. Sonst verschiebt
+            // sich der Saum gegenueber dem Kern.
             double targetX = targetRect.X;
             double targetY = targetRect.Y;
             double targetW = targetRect.Width;
             double targetH = targetRect.Height;
 
-            if (isAppleStyle)
-            {
-                targetX += 20;
-                targetY += 20;
-                targetW -= 40;
-                targetH -= 40;
-            }
+            double pad = RinglightGlowPad;
 
-            var duration = TimeSpan.FromSeconds(0.4); 
+            var duration = TimeSpan.FromSeconds(0.4);
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
 
-            ThicknessAnimation marginAnim = new ThicknessAnimation { To = new Thickness(targetX, targetY, 0, 0), Duration = duration, EasingFunction = ease };
-            DoubleAnimation widthAnim = new DoubleAnimation { To = targetW, Duration = duration, EasingFunction = ease };
-            DoubleAnimation heightAnim = new DoubleAnimation { To = targetH, Duration = duration, EasingFunction = ease };
+            var marginAnim = new ThicknessAnimation
+            {
+                To = new Thickness(targetX - pad, targetY - pad, 0, 0),
+                Duration = duration,
+                EasingFunction = ease,
+            };
+            var widthAnim = new DoubleAnimation { To = targetW + 2 * pad, Duration = duration, EasingFunction = ease };
+            var heightAnim = new DoubleAnimation { To = targetH + 2 * pad, Duration = duration, EasingFunction = ease };
 
             Timeline.SetDesiredFrameRate(marginAnim, 60);
             Timeline.SetDesiredFrameRate(widthAnim, 60);
             Timeline.SetDesiredFrameRate(heightAnim, 60);
 
-            border.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
-            border.BeginAnimation(FrameworkElement.WidthProperty, widthAnim);
-            border.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
+            glow.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
+            glow.BeginAnimation(FrameworkElement.WidthProperty, widthAnim);
+            glow.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
         }
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
-            foreach (var border in _activeBorders)
+            for (int i = 0; i < _glowPanels.Count; i++)
             {
-                Rect baseRect = (Rect)border.Tag;
+                AnimateGlowToRect(_glowPanels[i], (Rect)_glowPanels[i].Tag, isAppleStyle);
+            }
 
-                AnimateBorderToRect(border, baseRect, isAppleStyle);
+            for (int i = 0; i < _corePieces.Count; i++)
+            {
+                Rect baseRect = (Rect)_corePieces[i].Tag;
+                AnimateGlowToRect(_glowPanels[i], baseRect, isAppleStyle);
 
-                if (isAppleStyle)
-                {
-                    double minSide = Math.Min(baseRect.Width, baseRect.Height);
-                    border.CornerRadius = new CornerRadius(minSide * 0.22);
-                }
-                else
-                {
-                    border.CornerRadius = new CornerRadius(3);
-                }
+                // Kern und Saum stecken beide im Glow-Canvas. Beim Stilwechsel
+                // aendert sich der Eckenradius - beides muss neu gebaut werden.
+                ForgetGlowState(i);
+                RebuildGlowIfNeeded(i, baseRect, isAppleStyle);
             }
         }
 
-        private System.Collections.Generic.List<System.Windows.Controls.Border> _activeBorders = new System.Collections.Generic.List<System.Windows.Controls.Border>();
+        /// <summary>
+        /// Vergisst, wofuer der Saum gebaut wurde - erzwingt beim naechsten
+        /// Aufruf einen Neubau (z. B. nach einem Stilwechsel).
+        /// </summary>
+        private void ForgetGlowState(int index)
+        {
+            if (index >= 0 && index < _glowStates.Count)
+            {
+                _glowStates[index] = null;
+            }
+        }
+
+        // Der Kern ist eine Border (dicker Rahmen). Der Glow besteht aus vier
+        // Verlaufsflaechen und ist deshalb ein Canvas - ein BorderBrush kann nur
+        // eine Richtung. Beide Listen laufen parallel.
+        // Der Kern ist ein Ringpfad (Pfad mit EvenOdd), kein Border - siehe
+        // AddRinglight. Ein Border wuerde den Innensaum verdecken.
+        private readonly System.Collections.Generic.List<System.Windows.Shapes.Path> _corePieces
+            = new System.Collections.Generic.List<System.Windows.Shapes.Path>();
+
+        // Rand um den Kern herum, in den der Saum gezeichnet wird.
+        // ScreenLayout.GlowPaddingDip (48) ist der Platz im FENSTER - beides
+        // muss zusammenpassen, sonst wird der Saum am Fensterrand abgeschnitten.
+        internal const double RinglightGlowPad = 48.0;
+
+        // Deckkraft des Saums - unveraendert wie vor dem Umbau.
+        internal const double GlowOpacity = 0.55;
+
+        private readonly System.Collections.Generic.List<System.Windows.Controls.Canvas> _glowPanels
+            = new System.Collections.Generic.List<System.Windows.Controls.Canvas>();
+
+        // Fuer welchen Zustand wurde der Glow zuletzt gebaut?
+        private readonly System.Collections.Generic.List<GlowState?> _glowStates
+            = new System.Collections.Generic.List<GlowState?>();
+
+        /// <summary>
+        /// Alle Monitore als reine Daten (physische Pixel), damit die Layout-Rechnung
+        /// ohne UI und ohne WinForms-Abhaengigkeit getestet werden kann.
+        /// </summary>
+        private static System.Collections.Generic.List<MonitorInfo> GetMonitorInfos()
+        {
+            var list = new System.Collections.Generic.List<MonitorInfo>();
+            foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+            {
+                System.Drawing.Rectangle b = screen.Bounds;
+                System.Drawing.Rectangle w = screen.WorkingArea;
+                list.Add(new MonitorInfo(
+                    new Rect(b.X, b.Y, b.Width, b.Height),
+                    new Rect(w.X, w.Y, w.Width, w.Height)));
+            }
+            return list;
+        }
+
+        /// <summary>DPI-Faktor des aktuellen Fensters (1.0 = 100 %).</summary>
+        private double GetDpiScale()
+        {
+            try
+            {
+                var source = PresentationSource.FromVisual(this);
+                if (source?.CompositionTarget != null)
+                {
+                    return source.CompositionTarget.TransformToDevice.M11;
+                }
+            }
+            catch { }
+            return 1.0;
+        }
+
+        private WindowLayout _layout = new WindowLayout(new Rect(0, 0, 0, 0),
+            System.Array.Empty<Rect>(), 1.0, true);
 
         public void UpdateMonitorSetup()
         {
             if (!this.IsLoaded) return;
 
-            // WICHTIG: Die Liste wird ganz oben deklariert, damit sie überall gültig ist!
-            System.Collections.Generic.List<Rect> targetRects = new System.Collections.Generic.List<Rect>();
+            var monitors = GetMonitorInfos();
 
-            if (Config.Current.IsSpanned)
+            WindowLayout layout;
+            if (Config.ShrinkWindowToUsedArea)
             {
-                double minX = double.MaxValue, minY = double.MaxValue;
-                double maxX = double.MinValue, maxY = double.MinValue;
-
-                foreach (var screen in System.Windows.Forms.Screen.AllScreens)
-                {
-                    var wa = screen.WorkingArea;
-                    if (wa.Left < minX) minX = wa.Left;
-                    if (wa.Top < minY) minY = wa.Top;
-                    if (wa.Right > maxX) maxX = wa.Right;
-                    if (wa.Bottom > maxY) maxY = wa.Bottom;
-                }
-
-                double spanW = maxX - minX;
-                double spanH = maxY - minY;
-                double relX = minX - SystemParameters.VirtualScreenLeft;
-                double relY = minY - SystemParameters.VirtualScreenTop;
-
-                targetRects.Add(new Rect(relX, relY, spanW, spanH));
+                layout = ScreenLayout.Compute(
+                    monitors,
+                    Config.Current.SelectedMonitors,
+                    Config.Current.IsSpanned,
+                    _isFullscreenActive,
+                    GetDpiScale());
             }
             else
             {
-                var screens = System.Windows.Forms.Screen.AllScreens;
-                foreach (int index in Config.Current.SelectedMonitors)
-                {
-                    if (index < screens.Length)
-                    {
-                        var s = screens[index];
-                        var rect = _isFullscreenActive ? s.Bounds : s.WorkingArea;
+                // Alter Pfad: Fenster = gesamter virtueller Desktop.
+                layout = ScreenLayout.Compute(
+                    monitors,
+                    Config.Current.SelectedMonitors,
+                    Config.Current.IsSpanned,
+                    _isFullscreenActive,
+                    GetDpiScale());
 
-                        double relX = rect.X - SystemParameters.VirtualScreenLeft;
-                        double relY = rect.Y - SystemParameters.VirtualScreenTop;
-                        targetRects.Add(new Rect(relX, relY, rect.Width, rect.Height));
-                    }
-                }
+                // Absichtlich auf den vollen Desktop aufblasen.
+                layout = new WindowLayout(
+                    new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                             SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight),
+                    layout.Rings, layout.Scale, layout.IsFallback);
             }
 
-            if (_activeBorders.Count != targetRects.Count * 2)
+            if (layout.IsFallback)
             {
-                _activeBorders.Clear();
+                // Keine gueltige Monitorauswahl: nichts anfassen.
+                return;
+            }
+
+            _layout = layout;
+
+            // Fenster exakt auf die genutzte Flaeche setzen (physische Pixel,
+            // deshalb ueber die HwndSource, nicht ueber Left/Top/Width/Height in DIP).
+            ApplyWindowRect(layout.WindowPixels);
+
+            if (_corePieces.Count != layout.Rings.Count)
+            {
+                _corePieces.Clear();
+                _glowPanels.Clear();
+                _glowStates.Clear();
                 MainGrid.Children.Clear();
 
-                this.Left = SystemParameters.VirtualScreenLeft;
-                this.Top = SystemParameters.VirtualScreenTop;
-                this.Width = SystemParameters.VirtualScreenWidth;
-                this.Height = SystemParameters.VirtualScreenHeight;
-
-                foreach (var r in targetRects)
+                foreach (var r in layout.Rings)
                 {
                     AddRinglight(r.X, r.Y, r.Width, r.Height);
                 }
@@ -578,19 +783,52 @@ namespace WinRinglight
             {
                 bool isApple = Config.Current.VisualStyleIndex == 0;
 
-                for (int i = 0; i < targetRects.Count; i++)
+                for (int i = 0; i < layout.Rings.Count; i++)
                 {
-                    var rect = targetRects[i];
-                    var glowBorder = _activeBorders[i * 2];
-                    var coreBorder = _activeBorders[i * 2 + 1];
+                    var rect = layout.Rings[i];
 
-                    glowBorder.Tag = rect;
-                    coreBorder.Tag = rect;
+                    var glow = _glowPanels[i];
+                    var core = _corePieces[i];
 
-                    AnimateBorderToRect(glowBorder, rect, isApple);
-                    AnimateBorderToRect(coreBorder, rect, isApple);
+                    glow.Tag = rect;
+                    core.Tag = rect;
+
+                    // WICHTIG fuer die Fluessigkeit: Glow und Kern muessen
+                    // gemeinsam wandern. Wuerde der Kern animieren und der Glow
+                    // springen, sieht man einen Versatz.
+                    // Kern und Saum stecken gemeinsam im Glow-Canvas.
+
+                    AnimateGlowToRect(glow, rect, isApple);
+
+                    // Der Glow wird sofort fuer die ENDGROESSE gebaut - nicht
+                    // pro Frame. Waehrend der 0,4 s bewegt sich nur die Flaeche;
+                    // die Rundung passt, weil der Kern seinen Eckenradius
+                    // ebenfalls sofort auf den Endwert setzt.
+                    RebuildGlowIfNeeded(i, rect, isApple);
                 }
             }
+        }
+
+
+        /// <summary>
+        /// Setzt das Fensterrechteck in physischen Pixeln. WPF rechnet Left/Top/Width/Height
+        /// in DIP, deshalb bei Skalierung != 100 % unbrauchbar fuer exakte Monitorgrenzen.
+        /// </summary>
+        private void ApplyWindowRect(Rect pixels)
+        {
+            try
+            {
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                SetWindowPos(hwnd, IntPtr.Zero,
+                    (int)System.Math.Round(pixels.X),
+                    (int)System.Math.Round(pixels.Y),
+                    (int)System.Math.Round(pixels.Width),
+                    (int)System.Math.Round(pixels.Height),
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            catch { }
         }
 
         public double GetSmartTemperature()
@@ -611,41 +849,226 @@ namespace WinRinglight
 
         private void AddRinglight(double x, double y, double w, double h)
         {
-            System.Windows.Controls.Border glowBorder = new System.Windows.Controls.Border
+            // Der weiche Rand ist ein Farbverlauf, kein BlurEffect.
+            // Ein BlurEffect wirkt auf die Bounds (= ganzer Monitor) und kostete
+            // im Messlauf 16x so viel wie alles andere zusammen.
+            //
+            // Der Saum liegt AUSSERHALB der Kernkante. Deshalb ist das Canvas
+            // pro Seite um GlowPaddingDip groesser und entsprechend versetzt -
+            // sonst wuerde der Rand am Fensterrand abgeschnitten.
+            double pad = RinglightGlowPad;
+            var glow = new Canvas
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                Margin = new Thickness(x, y, 0, 0),
-                Width = w,
-                Height = h,
-                Opacity = 0.55,
+                Width = w + 2 * pad,
+                Height = h + 2 * pad,
+                Margin = new Thickness(x - pad, y - pad, 0, 0),
+                // Die Deckkraft steckt in den einzelnen Schichten - sonst
+                // wuerde der deckende Kern mit abgesenkt.
+                IsHitTestVisible = false,
+                RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+                RenderTransform = new System.Windows.Media.ScaleTransform(1, 1),
+            };
+            glow.Tag = new Rect(x, y, w, h);
+            _glowPanels.Add(glow);
+            MainGrid.Children.Add(glow);
 
-                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false, RenderAtScale = 0.25 },
+            // Der Kern ist ein Path, keine Border. Grund: Der weiche Rand wirkt
+            // BEIDSEITIG (nach aussen auf den Desktop, nach innen in das Loch).
+            // Mit einer Border deckt der Kern seinen ganzen Kasten ab - der
+            // Innensaum laege darunter und waere unsichtbar. Als Ringpfad
+            // bleibt das Loch wirklich frei.
+            var core = new System.Windows.Shapes.Path
+            {
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                IsHitTestVisible = false,
+            };
 
-                Effect = new System.Windows.Media.Effects.BlurEffect
+            RenderOptions.SetEdgeMode(core, EdgeMode.Unspecified);
+
+            core.Tag = new Rect(x, y, w, h);
+            _corePieces.Add(core);
+            MainGrid.Children.Add(core);
+        }
+
+        /// <summary>
+        /// Baut die vier Verlaufsflaechen fuer den weichen Rand neu auf.
+        /// Wird nur bei Aenderungen von Groesse, Dicke oder Farbe aufgerufen -
+        /// NICHT bei Mausbewegungen.
+        /// </summary>
+        /// <summary>
+        /// Baut den weichen Ringsaum neu auf: vier gerade Stuecke und vier
+        /// runde Ecken, die zusammen ein konstant breites Band **ausserhalb**
+        /// der Kernkante ergeben.
+        ///
+        /// Warum nicht vier Rechtecke: Der Kern ist ein abgerundetes Rechteck.
+        /// Gerade Rechtecke passen nur auf den geraden Seiten; an den Ecken
+        /// stehen sie heraus (sichtbare Leuchtstreifen) und auf den geraden
+        /// Seiten lagen sie unter dem Kern. Deshalb dieselbe Kontur wie der
+        /// Kern, nur um die Bandbreite nach aussen versetzt.
+        /// </summary>
+        /// <summary>
+        /// Baut den Kern als Ringpfad: aussen abgerundetes Rechteck, innen ein
+        /// zweites - zusammen ein Rahmen mit rundem Loch. EvenOdd laesst das
+        /// Innere offen, damit der Innensaum darunter sichtbar bleibt.
+        /// </summary>
+        internal static System.Windows.Media.Geometry CoreRingGeometry(
+            double width, double height, double thickness, double cornerRadius)
+        {
+            double r = System.Math.Max(0, System.Math.Min(cornerRadius, System.Math.Min(width, height) / 2.0));
+
+            var figure = new System.Windows.Media.PathFigure
+            {
+                IsClosed = true,
+                IsFilled = true,
+            };
+
+            AddRoundedRect(figure, 0, 0, width, height, r);
+
+            // Innenring - entgegengesetzter Umlaufsinn ist mit EvenOdd nicht
+            // noetig, aber so bleibt es auch bei Nonzero korrekt.
+            double iw = System.Math.Max(0.01, width - 2 * thickness);
+            double ih = System.Math.Max(0.01, height - 2 * thickness);
+            double ir = System.Math.Max(0, System.Math.Min(r - thickness, System.Math.Min(iw, ih) / 2.0));
+            AddRoundedRect(figure, thickness, thickness, iw, ih, ir);
+
+            var geometry = new System.Windows.Media.PathGeometry();
+            geometry.Figures.Add(figure);
+            geometry.FillRule = System.Windows.Media.FillRule.EvenOdd;
+            geometry.Freeze();
+            return geometry;
+        }
+
+        private static void AddRoundedRect(System.Windows.Media.PathFigure figure,
+            double x, double y, double w, double h, double r)
+        {
+            if (w <= 0 || h <= 0) return;
+
+            r = System.Math.Max(0, System.Math.Min(r, System.Math.Min(w, h) / 2.0));
+
+            if (r <= 0.01)
+            {
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y + h), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y + h), true));
+                return;
+            }
+
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + r, y), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + w, y + r),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y + h - r), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + w - r, y + h),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + r, y + h), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x, y + h - r),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y + r), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + r, y),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+        }
+
+        /// <summary>
+        /// Tatsaechliche Masse des Kerns in DIP. Der Kern ist um den
+        /// Apple-Innenabstand kleiner als das Ring-Rechteck; im eckigen Stil
+        /// ist er genauso gross wie das Rechteck.
+        /// </summary>
+        private static (double W, double H) CoreSize(Rect rect, bool isAppleStyle)
+        {
+            double shrink = isAppleStyle ? 40 : 0;
+            return (Math.Max(1, rect.Width - shrink), Math.Max(1, rect.Height - shrink));
+        }
+
+        private static System.Windows.Media.Color GetCurrentLightColor()
+        {
+            double kelvin = Config.Current.AutoTemperature ? 4000 : Config.Current.Temperature;
+            return KelvinToColor(kelvin);
+        }
+
+        /// <summary>
+        /// Baut den Saum nur neu, wenn sich wirklich etwas geaendert hat.
+        /// Mausbewegung loest das NICHT aus.
+        /// </summary>
+        private void RebuildGlowIfNeeded(int index, Rect rect, bool isAppleStyle)
+        {
+            if (index < 0 || index >= _glowPanels.Count) return;
+
+            var (w, h) = CoreSize(rect, isAppleStyle);
+            double kelvin = Config.Current.AutoTemperature ? 4000 : Config.Current.Temperature;
+            var now = new GlowState(w, h, Config.Current.Thickness, kelvin);
+            var last = index < _glowStates.Count ? _glowStates[index] : null;
+
+            if (!GlowRebuildPolicy.NeedsRebuild(last, now)) return;
+
+            RebuildGlow(_glowPanels[index], w, h, Config.Current.Thickness, GetCurrentLightColor(), isAppleStyle);
+
+            while (_glowStates.Count <= index) _glowStates.Add(null);
+            _glowStates[index] = now;
+        }
+
+        private void RebuildGlow(Canvas glow, double coreW, double coreH, double thickness,
+            System.Windows.Media.Color color, bool isAppleStyle)
+        {
+            glow.Children.Clear();
+
+            if (coreW <= 0 || coreH <= 0 || thickness <= 0) return;
+
+            double radius = RingHalo.CoreCornerRadius(coreW, coreH, isAppleStyle);
+
+            // Der Kern ist im Apple-Stil um 20 DIP eingerueckt.
+            double inset = isAppleStyle ? 20.0 : 0.0;
+            double pad = RinglightGlowPad + inset;
+
+            double innerW = Math.Max(0.01, coreW - 2 * thickness);
+            double innerH = Math.Max(0.01, coreH - 2 * thickness);
+
+            // 1) Der Saum: gestrichene Kontur des Rings, mehrere Schichten.
+            //    Er wirkt nach AUSSEN und nach INNEN - wie der alte
+            //    Weichzeichner. Ein Band nur aussen war der Fehler.
+            foreach (var layer in RingHalo.Build(color, pad, pad, coreW, coreH, radius, thickness, GlowOpacity))
+            {
+                glow.Children.Add(new System.Windows.Shapes.Path
                 {
-                    Radius = 15,
-                    RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
-                }
-            };
-            glowBorder.Tag = new Rect(x, y, w, h);
-            _activeBorders.Add(glowBorder);
-            MainGrid.Children.Add(glowBorder);
+                    Data = layer.Geometry,
+                    Stroke = layer.Brush,
+                    StrokeThickness = layer.StrokeThickness,
+                    IsHitTestVisible = false,
+                });
+            }
 
-            System.Windows.Controls.Border coreBorder = new System.Windows.Controls.Border
+            // 2) Der Kern als Ring (EvenOdd): aussen abgerundet, innen das Loch.
+            //    Deckend, damit die Farbe stimmt. Was der Weichzeichner frueher
+            //    in das Loch hinein streute, steckt in den inneren Schichten
+            //    von oben - deshalb liegt der Kern hier DARUEBER und deckt
+            //    nur die Ringflaeche ab, nicht das Loch.
+            var frozen = new System.Windows.Media.SolidColorBrush(color);
+            frozen.Freeze();
+
+            var corePath = new System.Windows.Shapes.Path
             {
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
-                VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                Margin = new Thickness(x, y, 0, 0),
-                Width = w,
-                Height = h
+                Data = CoreRingGeometry(coreW, coreH, thickness, radius),
+                Fill = frozen,
+                IsHitTestVisible = false,
+                RenderTransform = new System.Windows.Media.TranslateTransform(pad, pad),
             };
+            glow.Children.Add(corePath);
+        }
 
-            RenderOptions.SetEdgeMode(coreBorder, EdgeMode.Unspecified);
 
-            coreBorder.Tag = new Rect(x, y, w, h);
-            _activeBorders.Add(coreBorder);
-            MainGrid.Children.Add(coreBorder);
+        /// <summary>
+        /// Kelvin -> Farbe. Ausgelagert, damit Einstellungen und Live-Update
+        /// dieselbe Rechnung benutzen.
+        /// </summary>
+        internal static System.Windows.Media.Color KelvinToColor(double kelvin)
+        {
+            double t = (kelvin - 2000) / 4500.0;
+            byte r = (byte)System.Math.Max(0, System.Math.Min(255, 255 - (20 * t)));
+            byte g = (byte)System.Math.Max(0, System.Math.Min(255, 170 + (75 * t)));
+            byte b = (byte)System.Math.Max(0, System.Math.Min(255, 50 + (205 * t)));
+            return System.Windows.Media.Color.FromRgb(r, g, b);
         }
 
         public void ApplySettingsLive(double brightness, double thickness, double kelvin)
@@ -655,28 +1078,20 @@ namespace WinRinglight
                 kelvin = GetSmartTemperature();
             }
 
-            foreach (var border in _activeBorders)
+            System.Windows.Media.Color lightColor = KelvinToColor(kelvin);
+            var frozen = new SolidColorBrush(lightColor);
+            frozen.Freeze();
+
+            // Der Kern ist jetzt Teil des Glow-Canvas (siehe RebuildGlow) -
+            // Farbe und Dicke landen deshalb ueber den Neubau unten.
+            // Der Glow braucht bei jeder Aenderung von Farbe oder Dicke
+            // neue Verlaeufe - aber nur dann. Nicht pro Frame und nicht pro
+            // Mausbewegung, sonst entsteht genau das Ruckeln, das vermieden
+            // werden soll.
+            bool isAppleStyle = Config.Current.VisualStyleIndex == 0;
+            for (int i = 0; i < _glowPanels.Count && i < _corePieces.Count; i++)
             {
-                border.BorderThickness = new Thickness(thickness);
-
-                if (Config.Current.VisualStyleIndex != 0)
-                {
-                    //border.CornerRadius = new CornerRadius(Math.Max(1, thickness));
-                    border.CornerRadius = new CornerRadius(3);
-                }
-
-                double t = (kelvin - 2000) / 4500.0;
-                byte r = (byte)(255 - (20 * t));
-                byte g = (byte)(170 + (75 * t));
-                byte b_col = (byte)(50 + (205 * t));
-
-                System.Windows.Media.Color lightColor = System.Windows.Media.Color.FromRgb(r, g, b_col);
-                border.BorderBrush = new SolidColorBrush(lightColor);
-
-                if (border.Effect is System.Windows.Media.Effects.BlurEffect blur)
-                {
-                    blur.Radius = Math.Min(40, thickness * 0.4);
-                }
+                RebuildGlowIfNeeded(i, (Rect)_corePieces[i].Tag, isAppleStyle);
             }
 
             double baseH = SystemParameters.PrimaryScreenHeight;

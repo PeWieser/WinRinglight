@@ -1,0 +1,267 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Tests (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .NET einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Versionen zeigen
+        run: dotnet --info
+
+      - name: App bauen
+        id: build
+        shell: pwsh
+        run: |
+          $log = "build.log"
+          dotnet build WinRinglight/WinRinglight.csproj -c Release -warnaserror:false -v minimal 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $warn = (Select-String -Path $log -Pattern ': warning ' -AllMatches).Count
+          $err  = (Select-String -Path $log -Pattern ': error ' -AllMatches).Count
+          "build_exit=$code"   >> $env:GITHUB_OUTPUT
+          "warnings=$warn"     >> $env:GITHUB_OUTPUT
+          "errors=$err"        >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { exit $code }
+
+      - name: Tests bauen und laufen lassen
+        id: tests
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "test.log"
+          dotnet test WinRinglight.Tests/WinRinglight.Tests.csproj -c Release -v minimal --logger "trx;LogFileName=results.trx" 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $passed = (Select-String -Path $log -Pattern 'Passed!\s*-\s*Failed:\s*0' -AllMatches).Count
+          # dotnet test schreibt: "Failed: 0, Passed: 13, Skipped: 0"
+          $p=$null;$f=$null;$s=$null
+          $trx = Get-ChildItem -Path . -Filter results.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trx) {
+            [xml]$x = Get-Content $trx.FullName
+            $c = $x.TestRun.ResultSummary.Counters
+            $p = $c.passed; $f = $c.failed; $s = $c.notExecuted
+          } else {
+            $line = Select-String -Path $log -Pattern 'Failed:\s*\d+,\s*Passed:\s*\d+' | Select-Object -Last 1
+            if ($line) {
+              if ($line.Line -match 'Failed:\s*(\d+)')  { $f = $Matches[1] }
+              if ($line.Line -match 'Passed:\s*(\d+)')  { $p = $Matches[1] }
+            }
+          }
+          "test_exit=$code"    >> $env:GITHUB_OUTPUT
+          "passed=$p"          >> $env:GITHUB_OUTPUT
+          "failed=$f"          >> $env:GITHUB_OUTPUT
+          "skipped=$s"         >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { exit $code }
+
+      - name: Layout-Report erzeugen
+        id: report
+        if: always() && steps.build.outputs.build_exit == '0'
+        shell: pwsh
+        run: |
+          $out = "report.md"
+          "## Fenstergroesse vorher / nachher" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          dotnet run --project tools/LayoutReport/LayoutReport.csproj -c Release -v quiet 2>&1 |
+            Out-File -FilePath $out -Append -Encoding utf8
+          Get-Content $out
+
+      - name: Render-Benchmark (Phase 3 Entscheidungsgrundlage)
+        id: bench
+        if: always() && steps.build.outputs.build_exit == '0'
+        shell: pwsh
+        run: |
+          $out = "bench.md"
+          "## Zeichenzeit pro Bild (gemessen)" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          dotnet run --project tools/RenderBench/RenderBench.csproj -c Release -v quiet 2>&1 |
+            Out-File -FilePath $out -Append -Encoding utf8
+          Get-Content $out
+
+      - name: Optik-Pruefung des Saums (echter WPF-Render)
+        id: glow
+        if: always() && steps.build.outputs.build_exit == '0'
+        shell: pwsh
+        run: |
+          $out = "glow.md"
+          "## Optik des Saums (gerendert, gemessen)" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          $log = dotnet run --project tools/GlowPreview/GlowPreview.csproj -c Release -v quiet -- glowpreview 2>&1
+          $code = $LASTEXITCODE
+          $log | Out-File -FilePath $out -Append -Encoding utf8
+          "glow_exit=$code" >> $env:GITHUB_OUTPUT
+          Get-Content $out
+
+          # Ergebnis in die Job-Zusammenfassung (ohne Markdown-Rendering-Fallen
+          # wie 01. der Matrix - deshalb hier mit -NoNewline formatiert).
+          if ($log) {
+            Get-Content $out -Raw | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+          Write-Host "----- MASZ-WERTE -----"
+          $log | ForEach-Object { Write-Host $_ }
+
+      - name: Optik-Bilder hochladen
+        if: always() && steps.build.outputs.build_exit == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glow-preview-${{ github.run_number }}
+          path: glowpreview/
+          retention-days: 14
+
+      - name: Ergebnisse zusammenfassen
+        id: summary
+        if: always()
+        shell: pwsh
+        run: |
+          $b = "${{ steps.build.outputs.build_exit }}"
+          $w = "${{ steps.build.outputs.warnings }}"
+          $e = "${{ steps.build.outputs.errors }}"
+          $t = "${{ steps.tests.outputs.test_exit }}"
+          $p = "${{ steps.tests.outputs.passed }}"
+          $f = "${{ steps.tests.outputs.failed }}"
+
+          $buildIcon = if ($b -eq "0") { "✅" } else { "❌" }
+          $testIcon  = if ($t -eq "0") { "✅" } else { "❌" }
+
+          $md = @()
+          $md += "## CI-Ergebnis"
+          $md += ""
+          $md += "| Schritt | Ergebnis | Detail |"
+          $md += "|---|---|---|"
+          $md += "| Build (`WinRinglight.csproj`) | $buildIcon | exit=$b, Fehler=$e, Warnungen=$w |"
+          $md += "| Tests (`ScreenLayoutTests`) | $testIcon | exit=$t, bestanden=$p, fehlgeschlagen=$f |"
+          $md += ""
+
+          # Diagnose direkt in den Kommentar, weil Artifact-Downloads aus der
+          # Sandbox nicht erreichbar sind.
+          # Fehlgeschlagene Tests zuerst aus der TRX - das ist die einzige
+          # Quelle mit Methode, Meldung und Zeile. Das Log-Format von
+          # "dotnet test" ist nicht verlaesslich genug zum Filtern.
+          $trxFile = Get-ChildItem -Path . -Filter results.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trxFile) {
+            [xml]$tx = Get-Content $trxFile.FullName
+            $failed = $tx.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq "Failed" }
+            if ($failed) {
+              $md += "<details open><summary>Fehlgeschlagene Tests ($($failed.Count))</summary>"
+              $md += ""
+              $md += '```'
+              foreach ($ft in ($failed | Select-Object -First 15)) {
+                $md += "$($ft.testName)"
+                $msg = $ft.Output.ErrorInfo.Message
+                if ($msg) {
+                  foreach ($line in ($msg -split "`n" | Select-Object -First 6)) {
+                    $md += "    $($line.Trim())"
+                  }
+                }
+                $st = $ft.Output.ErrorInfo.StackTrace
+                if ($st) {
+                  $first = ($st -split "`n" | Where-Object { $_ -match "\.cs:line" } | Select-Object -First 1)
+                  if ($first) { $md += "    -> $($first.Trim())" }
+                }
+                $md += ""
+              }
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          } elseif (Test-Path "test.log") {
+            $fail = Select-String -Path test.log -Pattern '(error CS|Failed!|Error Message)' -Context 0,3 |
+                    Select-Object -First 40 | ForEach-Object { $_.Line }
+            if ($fail) {
+              $md += "<details><summary>Test-Fehler (Auszug)</summary>"
+              $md += ""
+              $md += '```'
+              $md += $fail
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          }
+
+          if (Test-Path "build.log") {
+            $errs = Select-String -Path build.log -Pattern ': error ' | Select-Object -First 25 | ForEach-Object { $_.Line.Trim() }
+            if ($errs) {
+              $md += "<details><summary>Build-Fehler</summary>"
+              $md += ""
+              $md += '```'
+              $md += $errs
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+
+            $warn = Select-String -Path build.log -Pattern ': warning ' | Select-Object -First 5 | ForEach-Object { $_.Line.Trim() }
+            if ($warn) {
+              $md += "<details><summary>Build-Warnungen</summary>"
+              $md += ""
+              $md += '```'
+              $md += $warn
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          }
+
+          if (Test-Path "glow.md") {
+            $md += (Get-Content glow.md -Raw)
+            $md += ""
+          }
+
+          if (Test-Path "bench.md") {
+            $md += (Get-Content bench.md -Raw)
+            $md += ""
+          }
+
+          if (Test-Path "report.md") {
+            $md += (Get-Content report.md -Raw)
+            $md += ""
+          }
+
+          $md += "Commit: ``${{ github.sha }}``"
+          $md += "Branch: ``${{ github.ref_name }}``"
+          $md += "Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $md | Out-File -FilePath result.md -Encoding utf8
+
+      - name: Kommentar in den Pull Request schreiben
+        if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $pr = gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number'
+          if ([string]::IsNullOrWhiteSpace($pr)) {
+            Write-Host "Kein Pull Request fuer diesen Branch - Kommentar uebersprungen."
+            exit 0
+          }
+          gh pr comment $pr --body-file result.md
+          Write-Host "Kommentar in PR #$pr geschrieben."
+
+      - name: Logs hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            build.log
+            test.log
+            report.md
+            results.trx
+          retention-days: 7
