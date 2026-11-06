@@ -13,28 +13,28 @@ Jede Änderung ist einzeln abschaltbar und einzeln prüfbar.
 
 | | Aufgabe | Status |
 |---|---|---|
-| 0.1 | GitHub-Actions-Workflow `CI` (windows-latest, build + Tests) | ☐ |
-| 0.2 | Automatischer Kommentar in den PR mit Build-Ergebnis | ☐ |
-| 0.3 | Pull Request für den Arbeitsbranch anlegen (Kommentarziel) | ☐ |
-| 0.4 | Erster grüner Lauf als Beweis, dass der Kreislauf steht | ☐ |
+| 0.1 | GitHub-Actions-Workflow `CI` (windows-latest, build + Tests) | ✅ |
+| 0.2 | Automatischer Kommentar in den PR mit Build-Ergebnis | ✅ |
+| 0.3 | Pull Request für den Arbeitsbranch anlegen (Kommentarziel) | ✅ PR #1 |
+| 0.4 | Erster grüner Lauf als Beweis, dass der Kreislauf steht | ✅ Lauf 42238446769 |
 
-## Phase 1 – Fenster auf die genutzte Fläche begrenzen  ← **jetzt**
+## Phase 1 – Fenster auf die genutzte Fläche begrenzen  ← **✅ erledigt**
 
 Der größte Einzelposten. Fenster ist heute immer `VirtualScreen*` groß.
 
 | | Aufgabe | Status |
 |---|---|---|
-| 1.1 | Bounding-Box der gewählten Monitore berechnen (in DIP) | ☐ |
-| 1.2 | Fenster auf diese Box setzen statt auf den ganzen Desktop | ☐ |
-| 1.3 | Border-Positionen relativ zur Box statt zum Desktop | ☐ |
-| 1.4 | Cursor-Koordinaten in dieselbe Box umrechnen | ☐ |
-| 1.5 | Fallback: bei Unsinn (leere Box) alles wie bisher | ☐ |
-| 1.6 | Build grün + Selbsttest im Log | ☐ |
+| 1.1 | Bounding-Box der gewählten Monitore berechnen (in DIP) | ✅ `ScreenLayout.Compute` |
+| 1.2 | Fenster auf diese Box setzen statt auf den ganzen Desktop | ✅ `SetWindowPos` |
+| 1.3 | Border-Positionen relativ zur Box statt zum Desktop | ✅ |
+| 1.4 | Cursor-Koordinaten in dieselbe Box umrechnen | ✅ `ToWindowDip` |
+| 1.5 | Fallback: bei Unsinn (leere Box) alles wie bisher | ✅ |
+| 1.6 | Build grün + Selbsttest im Log | ✅ 22 Tests |
 
 **Erwartung:** Bei „1 von 3 Monitoren" sinkt die Fensterfläche um Faktor 2–3.
 Bei 2× 4K gespannt bleibt sie gleich – dort bringt Phase 2 den Gewinn.
 
-## Phase 2 – Maske von der Wurzel auf die Ringe
+## Phase 2 – Maske von der Wurzel auf die Ringe  ← **als Nächstes**
 
 | | Aufgabe | Status |
 |---|---|---|
