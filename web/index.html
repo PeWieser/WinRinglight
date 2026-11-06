@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#eeece5" />
+<title>Oyster Perpetual · Datejust — Skeuomorphic Watch</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="room">
+  <div class="room__glow" aria-hidden="true"></div>
+  <div class="room__lamp" aria-hidden="true"></div>
+  <div class="room__grain" aria-hidden="true"></div>
+  <div class="room__vignette" aria-hidden="true"></div>
+
+  <div class="layout">
+    <main class="stage" id="stage">
+      <div class="plaque" aria-hidden="true">
+        <span class="plaque__rule"></span>
+        <span class="plaque__text">Oyster&nbsp;Perpetual</span>
+        <span class="plaque__rule"></span>
+      </div>
+
+      <div class="watch-host" id="watchHost">
+        <div class="watch-tilt" id="watchTilt">
+          <svg id="watch" viewBox="0 0 720 1002" preserveAspectRatio="xMidYMid meet" role="img"
+               aria-label="Realistische Rolex Datejust mit laufender Uhrzeit, Datum und Krone"></svg>
+        </div>
+        <div class="watch-glare" id="watchGlare" aria-hidden="true"></div>
+      </div>
+
+      <div class="stage__foot">
+        <p class="hint" id="hint">
+          <span class="hint__k">Krone</span> ziehen, um die Zeit zu stellen
+          <span class="hint__dot">·</span>
+          <span class="hint__k">Maus</span> bewegt das Licht
+        </p>
+      </div>
+    </main>
+
+    <aside class="panel" id="panel" aria-label="Uhrwerk-Steuerung">
+      <div class="panel__screw panel__screw--tl" aria-hidden="true"></div>
+      <div class="panel__screw panel__screw--tr" aria-hidden="true"></div>
+      <div class="panel__screw panel__screw--bl" aria-hidden="true"></div>
+      <div class="panel__screw panel__screw--br" aria-hidden="true"></div>
+
+      <header class="panel__head">
+        <div class="panel__eyebrow">Kaliber 3235</div>
+        <h1 class="panel__title">Datejust<span class="panel__size">36</span></h1>
+        <div class="panel__sub">Stahl · Weißgold-Lünette · Smaragdgrün</div>
+      </header>
+
+      <div class="readout">
+        <span class="readout__led" id="led" aria-hidden="true"></span>
+        <span class="readout__state" id="stateText">Gangwerk läuft</span>
+        <span class="readout__time" id="digital" aria-live="off">--:--:--</span>
+      </div>
+
+      <div class="controls">
+        <div class="ctrl">
+          <div class="ctrl__label">Krone</div>
+          <div class="ctrl__body">
+            <button class="btn btn--crown" id="crownBtn" aria-pressed="false">
+              <span class="btn__cap" id="crownCap">Verschraubt</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl__label">Datum</div>
+          <div class="ctrl__body ctrl__body--date">
+            <button class="btn btn--mini" id="dateDown" aria-label="Datum zurück">−</button>
+            <div class="datestep" id="datestep" aria-live="polite">28</div>
+            <button class="btn btn--mini" id="dateUp" aria-label="Datum vor">+</button>
+            <button class="btn btn--link" id="dateToday">Heute</button>
+          </div>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl__label">Licht</div>
+          <div class="ctrl__body ctrl__body--light">
+            <div class="knob" id="lightKnob" role="slider" aria-label="Lichtstärke"
+                 aria-valuemin="20" aria-valuemax="100" aria-valuenow="80" tabindex="0">
+              <div class="knob__face" id="knobFace">
+                <span class="knob__notch"></span>
+              </div>
+              <div class="knob__glow"></div>
+            </div>
+            <div class="lightval"><span id="lightVal">80</span><small>%</small></div>
+          </div>
+        </div>
+
+        <div class="ctrl ctrl--switch">
+          <div class="ctrl__label">Nacht</div>
+          <div class="ctrl__body">
+            <button class="lever" id="lumeBtn" role="switch" aria-checked="false" aria-label="Nachtmodus">
+              <span class="lever__track"><span class="lever__knob"></span></span>
+              <span class="lever__cap">Lume</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="ctrl ctrl--switch">
+          <div class="ctrl__label">Werk</div>
+          <div class="ctrl__body">
+            <button class="lever" id="soundBtn" role="switch" aria-checked="false" aria-label="Tickgeräusch">
+              <span class="lever__track"><span class="lever__knob"></span></span>
+              <span class="lever__cap">Tick</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel__foot">
+        <button class="btn btn--wide" id="syncBtn">Auf Systemzeit stellen</button>
+        <p class="panel__legal">Inoffizielles Fan-Projekt · keine Verbindung zu Rolex&nbsp;SA</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="js/watch.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
