@@ -1,0 +1,188 @@
+using System;
+using System.Windows;
+using Xunit;
+
+namespace WinRinglight.Tests
+{
+    /// <summary>
+    /// Der Saum muss ein konstant breites Band **ausserhalb** der Kernkante
+    /// sein und dieselbe runde Kontur haben wie der Kern.
+    ///
+    /// Diese Tests sind aus zwei echten Fehlern entstanden:
+    /// 1. Der Saum lag INNEN (unter dem Kern) - auf den geraden Seiten
+    ///    unsichtbar, an den runden Ecken als eckige Leuchtstreifen sichtbar.
+    /// 2. Es gab nur vier gerade Rechtecke - die passen nicht zu einem
+    ///    abgerundeten Kern.
+    /// </summary>
+    public class RingBandTests
+    {
+        private const double W = 1900;
+        private const double H = 1040;
+
+        [Fact]
+        public void AchtStuecke_VierGeradeVierEcken()
+        {
+            var pieces = RingBand.Pieces(W, H, 228, 24);
+
+            Assert.Equal(8, pieces.Length);
+            Assert.Equal(4, Array.FindAll(pieces, p => !p.IsCorner).Length);
+            Assert.Equal(4, Array.FindAll(pieces, p => p.IsCorner).Length);
+        }
+
+        [Fact]
+        public void BandLiegtAusserhalbDerKernkante()
+        {
+            // Das war Fehler 1: Der Saum begann bei der Kernmitte statt an der
+            // Aussenkante und lag damit unter dem Kern.
+            var pieces = RingBand.Pieces(W, H, 228, 24);
+
+            foreach (var p in pieces)
+            {
+                // Nichts darf tiefer als die Kernkante ins Innere ragen,
+                // ausser durch den Eckenradius bedingt.
+                Assert.True(p.Bounds.X <= 0.001 || p.Bounds.X >= W - 0.001 || p.Bounds.Width > 0,
+                    "Stueck ohne Lage");
+            }
+
+            // Das obere Stueck liegt vollstaendig ueber dem Kern (y <= 0).
+            var top = Array.Find(pieces, p => p.Kind == BandPieceKind.Top);
+            Assert.True(top.Bounds.Bottom <= 0.001, $"Oben liegt bei {top.Bounds.Bottom}, muss <= 0 sein");
+
+            // Das untere vollstaendig darunter.
+            var bottom = Array.Find(pieces, p => p.Kind == BandPieceKind.Bottom);
+            Assert.True(bottom.Bounds.Top >= H - 0.001, "Unten liegt im Kern");
+
+            // Links und rechts ebenso.
+            var left = Array.Find(pieces, p => p.Kind == BandPieceKind.Left);
+            Assert.True(left.Bounds.Right <= 0.001, "Links liegt im Kern");
+            var right = Array.Find(pieces, p => p.Kind == BandPieceKind.Right);
+            Assert.True(right.Bounds.Left >= W - 0.001, "Rechts liegt im Kern");
+        }
+
+        [Fact]
+        public void BandIstUeberallGleichBreit()
+        {
+            var pieces = RingBand.Pieces(W, H, 228, 24);
+
+            foreach (var p in pieces)
+            {
+                if (p.IsCorner) continue;
+
+                double breite = p.Kind == BandPieceKind.Top || p.Kind == BandPieceKind.Bottom
+                    ? p.Bounds.Height : p.Bounds.Width;
+
+                Assert.Equal(24, breite, 3);
+            }
+        }
+
+        [Fact]
+        public void EckenReichenBisInDieEcke()
+        {
+            var pieces = RingBand.Pieces(W, H, 228, 24);
+
+            var tl = Array.Find(pieces, p => p.Kind == BandPieceKind.TopLeft);
+            Assert.Equal(-24, tl.Bounds.X, 3);
+            Assert.Equal(-24, tl.Bounds.Y, 3);
+
+            var br = Array.Find(pieces, p => p.Kind == BandPieceKind.BottomRight);
+            Assert.Equal(W, br.Bounds.Right - 24, 3);
+            Assert.Equal(H, br.Bounds.Bottom - 24, 3);
+        }
+
+        [Fact]
+        public void EckenStueckeHabenIhrenMittelpunktAmRadius()
+        {
+            double r = 228;
+            var pieces = RingBand.Pieces(W, H, r, 24);
+
+            var tl = Array.Find(pieces, p => p.Kind == BandPieceKind.TopLeft);
+            Assert.Equal(r, tl.ArcCenter.X, 3);
+            Assert.Equal(r, tl.ArcCenter.Y, 3);
+
+            var br = Array.Find(pieces, p => p.Kind == BandPieceKind.BottomRight);
+            Assert.Equal(W - r, br.ArcCenter.X, 3);
+            Assert.Equal(H - r, br.ArcCenter.Y, 3);
+        }
+
+        [Fact]
+        public void GeradeStueckeSindTangentenlang()
+        {
+            // Zwischen den beiden Ecken bleibt genau W - 2r bzw. H - 2r.
+            double r = 228;
+            var pieces = RingBand.Pieces(W, H, r, 24);
+
+            var top = Array.Find(pieces, p => p.Kind == BandPieceKind.Top);
+            Assert.Equal(W - 2 * r, top.Bounds.Width, 3);
+            Assert.Equal(r, top.Bounds.X, 3);
+        }
+
+        [Fact]
+        public void KeinStueckIstLeer()
+        {
+            var pieces = RingBand.Pieces(W, H, 228, 24);
+
+            foreach (var p in pieces)
+            {
+                Assert.True(p.Bounds.Width > 0, $"{p.Kind} hat Breite 0");
+                Assert.True(p.Bounds.Height > 0, $"{p.Kind} hat Hoehe 0");
+            }
+        }
+
+        [Fact]
+        public void OhneGroesse_GibtEsKeineStuecke()
+        {
+            Assert.Empty(RingBand.Pieces(0, 0, 0, 24));
+            Assert.Empty(RingBand.Pieces(W, H, 228, 0));
+        }
+
+        [Theory]
+        [InlineData(true, 228)]      // Apple: 1040 * 0.22 = 228.8
+        [InlineData(false, 3)]       // eckig
+        public void Eckenradius_ProStil(bool apple, double erwartet)
+        {
+            double r = RingBand.CoreCornerRadius(W, H, apple);
+            Assert.Equal(erwartet, r, 0);
+        }
+
+        [Fact]
+        public void EckenradiusWirdNieGroesserAlsDieHalbeSeite()
+        {
+            // Kleine Ringe (z. B. ein stark verkleinertes Fenster) duerfen
+            // keinen Radius bekommen, der groesser als die Flaeche ist.
+            double r = RingBand.CoreCornerRadius(100, 40, true);
+            Assert.True(r <= 20, $"Radius {r} ist groesser als die halbe Hoehe");
+        }
+
+        [Fact]
+        public void FertigeStuecke_HabenPinselUndGeometrie()
+        {
+            var built = RingBand.Build(
+                System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 228, 24);
+
+            Assert.Equal(8, built.Count);
+
+            foreach (var p in built)
+            {
+                Assert.NotNull(p.Geometry);
+                Assert.NotNull(p.Brush);
+                Assert.True(p.Geometry.IsFrozen, "Geometrie muss eingefroren sein");
+                Assert.True(p.Brush.IsFrozen, "Pinsel muss eingefroren sein");
+                Assert.False(p.Geometry.IsEmpty(), "Geometrie darf nicht leer sein");
+            }
+        }
+
+        [Fact]
+        public void BandIstNichtNurEinPunkt()
+        {
+            // Fehler 2 war: an den Ecken ein gerades Rechteck. Ein Band mit
+            // Radius muss dort eine RUNDE Begrenzung haben, also eine Geometrie
+            // mit Bogen und nicht nur ein Rechteck.
+            var built = RingBand.Build(
+                System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 228, 24);
+
+            var ecke = built.Find(p => p.Piece.Kind == BandPieceKind.TopLeft);
+            Assert.True(ecke.Geometry.Bounds.Width > 10, "Ecke ist zu klein");
+            Assert.True(ecke.Geometry.Bounds.Height > 10, "Ecke ist zu klein");
+        }
+    }
+}

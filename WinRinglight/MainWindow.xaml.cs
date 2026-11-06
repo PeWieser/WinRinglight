@@ -611,6 +611,12 @@ namespace WinRinglight
         /// Die vier Verlaufsflaechen selbst bleiben dabei unveraendert - nur die
         /// Position und Groesse des Canvas wandern.
         /// </summary>
+        /// <summary>
+        /// Animiert den Glow mit. Wichtig: Animiert werden die **Kernmasse**
+        /// (aeusserer Kasten), nicht die Flaeche des Glow-Canvas - die ist um
+        /// <see cref="RinglightGlowPad"/> groesser. Frueher liefen Kern und Glow
+        /// dadurch auseinander.
+        /// </summary>
         private void AnimateGlowToRect(Canvas glow, Rect targetRect, bool isAppleStyle)
         {
             double targetX = targetRect.X;
@@ -620,24 +626,26 @@ namespace WinRinglight
 
             if (isAppleStyle)
             {
-                // Gleicher Innenabstand wie beim Kern (MainWindow: targetX/Y += 20).
+                // Gleicher Innenabstand wie beim Kern (siehe AnimateBorderToRect).
                 targetX += 20;
                 targetY += 20;
                 targetW -= 40;
                 targetH -= 40;
             }
 
+            double pad = RinglightGlowPad;
+
             var duration = TimeSpan.FromSeconds(0.4);
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
 
             var marginAnim = new ThicknessAnimation
             {
-                To = new Thickness(targetX, targetY, 0, 0),
+                To = new Thickness(targetX - pad, targetY - pad, 0, 0),
                 Duration = duration,
                 EasingFunction = ease,
             };
-            var widthAnim = new DoubleAnimation { To = targetW, Duration = duration, EasingFunction = ease };
-            var heightAnim = new DoubleAnimation { To = targetH, Duration = duration, EasingFunction = ease };
+            var widthAnim = new DoubleAnimation { To = targetW + 2 * pad, Duration = duration, EasingFunction = ease };
+            var heightAnim = new DoubleAnimation { To = targetH + 2 * pad, Duration = duration, EasingFunction = ease };
 
             Timeline.SetDesiredFrameRate(marginAnim, 60);
             Timeline.SetDesiredFrameRate(widthAnim, 60);
@@ -650,26 +658,41 @@ namespace WinRinglight
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
-            foreach (var glow in _glowPanels)
+            for (int i = 0; i < _glowPanels.Count; i++)
             {
-                AnimateGlowToRect(glow, (Rect)glow.Tag, isAppleStyle);
+                AnimateGlowToRect(_glowPanels[i], (Rect)_glowPanels[i].Tag, isAppleStyle);
             }
 
-            foreach (var border in _coreBorders)
+            for (int i = 0; i < _coreBorders.Count; i++)
             {
+                Border border = _coreBorders[i];
                 Rect baseRect = (Rect)border.Tag;
 
                 AnimateBorderToRect(border, baseRect, isAppleStyle);
 
-                if (isAppleStyle)
-                {
-                    double minSide = Math.Min(baseRect.Width, baseRect.Height);
-                    border.CornerRadius = new CornerRadius(minSide * 0.22);
-                }
-                else
-                {
-                    border.CornerRadius = new CornerRadius(3);
-                }
+                // Einzige Quelle fuer den Eckenradius: RingBand. Kern und Saum
+                // muessen dieselbe Kontur haben, sonst entstehen Kanten.
+                var (cw, ch) = CoreSize(baseRect, isAppleStyle);
+                border.CornerRadius = new CornerRadius(
+                    RingBand.CoreCornerRadius(cw, ch, isAppleStyle));
+
+                // Beim Stilwechsel aendert sich der Eckenradius - der Saum muss
+                // mit. Ohne das behielt er die alte (eckige) Kontur und stand
+                // an den runden Ecken als Leuchtstreifen heraus.
+                ForgetGlowState(i);
+                RebuildGlowIfNeeded(i, baseRect, isAppleStyle);
+            }
+        }
+
+        /// <summary>
+        /// Vergisst, wofuer der Saum gebaut wurde - erzwingt beim naechsten
+        /// Aufruf einen Neubau (z. B. nach einem Stilwechsel).
+        /// </summary>
+        private void ForgetGlowState(int index)
+        {
+            if (index >= 0 && index < _glowStates.Count)
+            {
+                _glowStates[index] = null;
             }
         }
 
@@ -801,9 +824,16 @@ namespace WinRinglight
                     // springen, sieht man einen Versatz.
                     AnimateBorderToRect(core, rect, isApple);
                     AnimateGlowToRect(glow, rect, isApple);
+
+                    // Der Glow wird sofort fuer die ENDGROESSE gebaut - nicht
+                    // pro Frame. Waehrend der 0,4 s bewegt sich nur die Flaeche;
+                    // die Rundung passt, weil der Kern seinen Eckenradius
+                    // ebenfalls sofort auf den Endwert setzt.
+                    RebuildGlowIfNeeded(i, rect, isApple);
                 }
             }
         }
+
 
         /// <summary>
         /// Setzt das Fensterrechteck in physischen Pixeln. WPF rechnet Left/Top/Width/Height
@@ -848,17 +878,21 @@ namespace WinRinglight
             // Ein BlurEffect wirkt auf die Bounds (= ganzer Monitor) und kostete
             // im Messlauf 16x so viel wie alles andere zusammen.
             //
-            // Ein BorderBrush hat nur eine Richtung. Fuer die vier Kanten
-            // braucht es vier Flaechen, deshalb ein Canvas mit vier Rechtecken.
+            // Der Saum liegt AUSSERHALB der Kernkante. Deshalb ist das Canvas
+            // pro Seite um GlowPaddingDip groesser und entsprechend versetzt -
+            // sonst wuerde der Rand am Fensterrand abgeschnitten.
+            double pad = RinglightGlowPad;
             var glow = new Canvas
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                Width = w,
-                Height = h,
-                Margin = new Thickness(x, y, 0, 0),
-                Opacity = 0.55,
+                Width = w + 2 * pad,
+                Height = h + 2 * pad,
+                Margin = new Thickness(x - pad, y - pad, 0, 0),
+                Opacity = GlowOpacity,
                 IsHitTestVisible = false,
+                RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+                RenderTransform = new System.Windows.Media.ScaleTransform(1, 1),
             };
             glow.Tag = new Rect(x, y, w, h);
             _glowPanels.Add(glow);
@@ -885,54 +919,93 @@ namespace WinRinglight
         /// Wird nur bei Aenderungen von Groesse, Dicke oder Farbe aufgerufen -
         /// NICHT bei Mausbewegungen.
         /// </summary>
-        private void RebuildGlow(Canvas glow, Rect rect, double thickness, System.Windows.Media.Color color)
+        /// <summary>
+        /// Baut den weichen Ringsaum neu auf: vier gerade Stuecke und vier
+        /// runde Ecken, die zusammen ein konstant breites Band **ausserhalb**
+        /// der Kernkante ergeben.
+        ///
+        /// Warum nicht vier Rechtecke: Der Kern ist ein abgerundetes Rechteck.
+        /// Gerade Rechtecke passen nur auf den geraden Seiten; an den Ecken
+        /// stehen sie heraus (sichtbare Leuchtstreifen) und auf den geraden
+        /// Seiten lagen sie unter dem Kern. Deshalb dieselbe Kontur wie der
+        /// Kern, nur um die Bandbreite nach aussen versetzt.
+        /// </summary>
+        /// <summary>
+        /// Tatsaechliche Masse des Kerns in DIP. Der Kern ist um den
+        /// Apple-Innenabstand kleiner als das Ring-Rechteck; im eckigen Stil
+        /// ist er genauso gross wie das Rechteck.
+        /// </summary>
+        private static (double W, double H) CoreSize(Rect rect, bool isAppleStyle)
+        {
+            double shrink = isAppleStyle ? 40 : 0;
+            return (Math.Max(1, rect.Width - shrink), Math.Max(1, rect.Height - shrink));
+        }
+
+        private static System.Windows.Media.Color GetCurrentLightColor()
+        {
+            double kelvin = Config.Current.AutoTemperature ? 4000 : Config.Current.Temperature;
+            return KelvinToColor(kelvin);
+        }
+
+        /// <summary>
+        /// Baut den Saum nur neu, wenn sich wirklich etwas geaendert hat.
+        /// Mausbewegung loest das NICHT aus.
+        /// </summary>
+        private void RebuildGlowIfNeeded(int index, Rect rect, bool isAppleStyle)
+        {
+            if (index < 0 || index >= _glowPanels.Count) return;
+
+            var (w, h) = CoreSize(rect, isAppleStyle);
+            double kelvin = Config.Current.AutoTemperature ? 4000 : Config.Current.Temperature;
+            var now = new GlowState(w, h, Config.Current.Thickness, kelvin);
+            var last = index < _glowStates.Count ? _glowStates[index] : null;
+
+            if (!GlowRebuildPolicy.NeedsRebuild(last, now)) return;
+
+            RebuildGlow(_glowPanels[index], w, h, Config.Current.Thickness, GetCurrentLightColor(), isAppleStyle);
+
+            while (_glowStates.Count <= index) _glowStates.Add(null);
+            _glowStates[index] = now;
+        }
+
+        private void RebuildGlow(Canvas glow, double coreW, double coreH, double thickness,
+            System.Windows.Media.Color color, bool isAppleStyle)
         {
             glow.Children.Clear();
 
-            // Der Glow liegt AUSSERHALB des Kerns und laeuft nach aussen aus.
-            // Vorher kam er vom BlurEffect, der ueber die Kernkante hinaus
-            // unscharf wurde - deshalb beginnt der Verlauf an der Kernkante.
+            // Das Band ist konstant breit und liegt AUSSERHALB der Kernkante.
+            // Frueher kam es vom BlurEffect, der ueber die Kernkante hinaus
+            // auslief - dieselbe Breite, aber ohne die Kosten (Blur rechnet
+            // ueber die ganze Bounds-Flaeche, nicht nur ueber den Streifen).
             double band = RingGlow.WidthFor(thickness);
-            double edge = thickness;          // innere Kante = Kernkante
-            double outer = thickness + band;  // aussen, wo der Saum auf null geht
 
-            if (outer <= 0 || rect.Width <= 0 || rect.Height <= 0) return;
+            if (band <= 0 || coreW <= 0 || coreH <= 0) return;
 
-            // Laenge des Verlaufs in relativen Einheiten ist immer 1; die
-            // Stuetzstellen verteilen sich auf die Bandbreite.
-            // Oben: von innen (deckend) nach aussen (transparent)
-            AddGlowStrip(glow, new Rect(edge, 0, System.Math.Max(0, rect.Width - 2 * edge), outer - edge), color,
-                new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+            double radius = RingBand.CoreCornerRadius(coreW, coreH, isAppleStyle);
+            var pieces = RingBand.Build(color, 1.0, coreW, coreH, radius, band);
 
-            // Unten
-            AddGlowStrip(glow, new Rect(edge, rect.Height - outer, System.Math.Max(0, rect.Width - 2 * edge), outer - edge), color,
-                new System.Windows.Point(0, 1), new System.Windows.Point(0, 0));
+            if (pieces.Count == 0) return;
 
-            // Links
-            AddGlowStrip(glow, new Rect(0, edge, outer - edge, System.Math.Max(0, rect.Height - 2 * edge)), color,
-                new System.Windows.Point(0, 0), new System.Windows.Point(1, 0));
+            double pad = RinglightGlowPad;
 
-            // Rechts
-            AddGlowStrip(glow, new Rect(rect.Width - outer, edge, outer - edge, System.Math.Max(0, rect.Height - 2 * edge)), color,
-                new System.Windows.Point(1, 0), new System.Windows.Point(0, 0));
-        }
+            System.Windows.Media.TranslateTransform shift =
+                new System.Windows.Media.TranslateTransform(pad, pad);
+            shift.Freeze();
 
-        private static void AddGlowStrip(Canvas parent, Rect area, System.Windows.Media.Color color,
-            System.Windows.Point from, System.Windows.Point to)
-        {
-            if (area.Width <= 0.5 || area.Height <= 0.5) return;
-
-            var rect = new System.Windows.Shapes.Rectangle
+            foreach (var piece in pieces)
             {
-                Width = area.Width,
-                Height = area.Height,
-                Fill = RingGlow.Create(color, 1.0, from, to),
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(rect, area.X);
-            Canvas.SetTop(rect, area.Y);
-            parent.Children.Add(rect);
+                var path = new System.Windows.Shapes.Path
+                {
+                    Data = piece.Geometry,
+                    Fill = piece.Brush,
+                    IsHitTestVisible = false,
+                    RenderTransform = shift,
+                };
+
+                glow.Children.Add(path);
+            }
         }
+
 
         /// <summary>
         /// Kelvin -> Farbe. Ausgelagert, damit Einstellungen und Live-Update
@@ -962,10 +1035,9 @@ namespace WinRinglight
             {
                 border.BorderThickness = new Thickness(thickness);
 
-                if (Config.Current.VisualStyleIndex != 0)
-                {
-                    border.CornerRadius = new CornerRadius(3);
-                }
+                bool apple = Config.Current.VisualStyleIndex == 0;
+                var (cw, ch) = CoreSize((Rect)border.Tag, apple);
+                border.CornerRadius = new CornerRadius(RingBand.CoreCornerRadius(cw, ch, apple));
 
                 border.BorderBrush = frozen;
             }
@@ -974,18 +1046,10 @@ namespace WinRinglight
             // neue Verlaeufe - aber nur dann. Nicht pro Frame und nicht pro
             // Mausbewegung, sonst entsteht genau das Ruckeln, das vermieden
             // werden soll.
+            bool isAppleStyle = Config.Current.VisualStyleIndex == 0;
             for (int i = 0; i < _glowPanels.Count && i < _coreBorders.Count; i++)
             {
-                var rect = (Rect)_coreBorders[i].Tag;
-                var state = new GlowState(rect.Width, rect.Height, thickness, kelvin);
-                var last = _glowStates.Count > i ? _glowStates[i] : null;
-
-                if (GlowRebuildPolicy.NeedsRebuild(last, state))
-                {
-                    RebuildGlow(_glowPanels[i], rect, thickness, lightColor);
-                    while (_glowStates.Count <= i) _glowStates.Add(null);
-                    _glowStates[i] = state;
-                }
+                RebuildGlowIfNeeded(i, (Rect)_coreBorders[i].Tag, isAppleStyle);
             }
 
             double baseH = SystemParameters.PrimaryScreenHeight;
