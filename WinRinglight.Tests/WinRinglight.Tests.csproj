@@ -21,7 +21,7 @@
     <Compile Include="..\WinRinglight\IdlePolicy.cs" Link="IdlePolicy.cs" />
     <Compile Include="..\WinRinglight\RingGlow.cs" Link="RingGlow.cs" />
     <Compile Include="..\WinRinglight\Config.cs" Link="Config.cs" />
-    <Compile Include="..\WinRinglight\RingBand.cs" Link="RingBand.cs" />
+    <Compile Include="..\WinRinglight\RingHalo.cs" Link="RingHalo.cs" />
   </ItemGroup>
 
 </Project>

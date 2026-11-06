@@ -864,7 +864,8 @@ namespace WinRinglight
                 Width = w + 2 * pad,
                 Height = h + 2 * pad,
                 Margin = new Thickness(x - pad, y - pad, 0, 0),
-                Opacity = GlowOpacity,
+                // Die Deckkraft steckt in den einzelnen Schichten - sonst
+                // wuerde der deckende Kern mit abgesenkt.
                 IsHitTestVisible = false,
                 RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
                 RenderTransform = new System.Windows.Media.ScaleTransform(1, 1),
@@ -1013,10 +1014,9 @@ namespace WinRinglight
         {
             glow.Children.Clear();
 
-            double band = RingGlow.WidthFor(thickness);
-            if (band <= 0 || coreW <= 0 || coreH <= 0) return;
+            if (coreW <= 0 || coreH <= 0 || thickness <= 0) return;
 
-            double radius = RingBand.CoreCornerRadius(coreW, coreH, isAppleStyle);
+            double radius = RingHalo.CoreCornerRadius(coreW, coreH, isAppleStyle);
 
             // Der Kern ist im Apple-Stil um 20 DIP eingerueckt.
             double inset = isAppleStyle ? 20.0 : 0.0;
@@ -1025,41 +1025,36 @@ namespace WinRinglight
             double innerW = Math.Max(0.01, coreW - 2 * thickness);
             double innerH = Math.Max(0.01, coreH - 2 * thickness);
 
-            // Der Kern als Ring (EvenOdd): aussen abgerundet, innen das Loch.
-            // Als Border wuerde er die ganze Flaeche decken und den Innensaum
-            // verdecken - deshalb ein Pfad.
+            // 1) Der Saum: gestrichene Kontur des Rings, mehrere Schichten.
+            //    Er wirkt nach AUSSEN und nach INNEN - wie der alte
+            //    Weichzeichner. Ein Band nur aussen war der Fehler.
+            foreach (var layer in RingHalo.Build(color, pad, pad, coreW, coreH, radius, thickness, GlowOpacity))
+            {
+                glow.Children.Add(new System.Windows.Shapes.Path
+                {
+                    Data = layer.Geometry,
+                    Stroke = layer.Brush,
+                    StrokeThickness = layer.StrokeThickness,
+                    IsHitTestVisible = false,
+                });
+            }
+
+            // 2) Der Kern als Ring (EvenOdd): aussen abgerundet, innen das Loch.
+            //    Deckend, damit die Farbe stimmt. Was der Weichzeichner frueher
+            //    in das Loch hinein streute, steckt in den inneren Schichten
+            //    von oben - deshalb liegt der Kern hier DARUEBER und deckt
+            //    nur die Ringflaeche ab, nicht das Loch.
             var frozen = new System.Windows.Media.SolidColorBrush(color);
             frozen.Freeze();
 
-            glow.Children.Add(new System.Windows.Shapes.Path
+            var corePath = new System.Windows.Shapes.Path
             {
                 Data = CoreRingGeometry(coreW, coreH, thickness, radius),
                 Fill = frozen,
                 IsHitTestVisible = false,
                 RenderTransform = new System.Windows.Media.TranslateTransform(pad, pad),
-            });
-
-            // Was der Blur frueher aus dem Kern heraus in das Loch hinein
-            // streute: ein weicher Verlauf ueber die volle Lochbreite.
-            glow.Children.Add(new System.Windows.Shapes.Path
-            {
-                Data = new System.Windows.Media.RectangleGeometry(
-                    new Rect(pad + thickness, pad + thickness, innerW, innerH)),
-                Fill = RingGlow.CoreInside(color, GlowOpacity, innerW, innerH, band),
-                IsHitTestVisible = false,
-            });
-
-            // Der Saum: aussen um die Aussenkante, innen um die Innenkante.
-            // Liegt ueber dem Loch-Verlauf, damit die Innenkante weich wird.
-            foreach (var piece in RingBand.Build(color, GlowOpacity, coreW, coreH, thickness, radius, band, pad, pad))
-            {
-                glow.Children.Add(new System.Windows.Shapes.Path
-                {
-                    Data = piece.Geometry,
-                    Fill = piece.Brush,
-                    IsHitTestVisible = false,
-                });
-            }
+            };
+            glow.Children.Add(corePath);
         }
 
 

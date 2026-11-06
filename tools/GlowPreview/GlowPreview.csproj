@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\WinRinglight\RingGlow.cs" Link="RingGlow.cs" />
-    <Compile Include="..\..\WinRinglight\RingBand.cs" Link="RingBand.cs" />
+    <Compile Include="..\..\WinRinglight\RingHalo.cs" Link="RingHalo.cs" />
   </ItemGroup>
 
 </Project>
