@@ -20,8 +20,8 @@ namespace WinRinglight.Tests
         {
             // Vorher: 20 Ticks/s, alle folgenlos.
             // Nachher: 1 Tick/s im Leerlauf.
-            const double before = 1000.0 / IdlePolicy.ActiveIntervalMs;   // 20
-            const double after = 1000.0 / IdlePolicy.IntervalFor(false);  // 1
+            double before = 1000.0 / IdlePolicy.ActiveIntervalMs;   // 20
+            double after = 1000.0 / IdlePolicy.IntervalFor(false);  // 1
 
             Assert.Equal(20, before);
             Assert.Equal(1, after);
