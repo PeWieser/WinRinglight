@@ -702,6 +702,14 @@ namespace WinRinglight
         private readonly System.Collections.Generic.List<System.Windows.Controls.Border> _coreBorders
             = new System.Collections.Generic.List<System.Windows.Controls.Border>();
 
+        // Rand um den Kern herum, in den der Saum gezeichnet wird.
+        // ScreenLayout.GlowPaddingDip (48) ist der Platz im FENSTER - beides
+        // muss zusammenpassen, sonst wird der Saum am Fensterrand abgeschnitten.
+        internal const double RinglightGlowPad = 48.0;
+
+        // Deckkraft des Saums - unveraendert wie vor dem Umbau.
+        internal const double GlowOpacity = 0.55;
+
         private readonly System.Collections.Generic.List<System.Windows.Controls.Canvas> _glowPanels
             = new System.Collections.Generic.List<System.Windows.Controls.Canvas>();
 
