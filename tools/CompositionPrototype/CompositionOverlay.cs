@@ -16,6 +16,8 @@ internal sealed class CompositionOverlay : IDisposable
 {
     private const int WsPopup = unchecked((int)0x80000000);
     private const int WsExTopmost = 0x8, WsExTransparent = 0x20, WsExToolWindow = 0x80;
+    private const int WsExLayered = 0x00080000;
+    private const uint LwaAlpha = 0x2;
     private const int WsExNoActivate = 0x08000000, WsExNoRedirectionBitmap = 0x00200000;
     private const uint WdaNone = 0, WdaExcludeFromCapture = 0x11;
     private static readonly Guid DesktopInteropId = new("29E691FA-4567-4DCA-B319-D0F207EB6807");
@@ -41,10 +43,15 @@ internal sealed class CompositionOverlay : IDisposable
         try
         {
             EnsureDispatcherQueue();
-            _hwnd = CreateWindowEx(WsExTopmost | WsExTransparent | WsExToolWindow | WsExNoActivate | WsExNoRedirectionBitmap,
+            _hwnd = CreateWindowEx(WsExTopmost | WsExTransparent | WsExToolWindow | WsExNoActivate | WsExNoRedirectionBitmap | WsExLayered,
                 "static", "Composition prototype overlay", WsPopup, _left, _top, _width, _height,
                 IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
             if (_hwnd == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+            // Layered + transparent causes mouse hit-testing to pass through
+            // this window, including to windows owned by other processes.
+            // This is experimental with a NOREDIRECTIONBITMAP Composition host.
+            if (!SetLayeredWindowAttributes(_hwnd, 0, 255, LwaAlpha))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
 
             _compositor = new Compositor();
             _target = CreateTarget(_compositor, _hwnd);
@@ -178,6 +185,7 @@ internal sealed class CompositionOverlay : IDisposable
     [DllImport("CoreMessaging.dll")] private static extern int CreateDispatcherQueueController(DispatcherQueueOptions options, out IntPtr controller);
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)] private static extern IntPtr CreateWindowEx(int exStyle, string className, string title, int style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? module);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, uint flags);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int command);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
