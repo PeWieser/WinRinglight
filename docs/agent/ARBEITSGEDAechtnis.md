@@ -24,3 +24,9 @@ Stand: 2026-11-06. Vor weiterer Arbeit aktualisieren. Nutzer möchte laufend üb
 ## Optische Referenz und Windows-Tests
 - Nutzerreferenz: Screenshot einer alten Version mit hellem, durchgehendem Ring und sehr dezentem Glow; die in macOS integrierte Ringlichtdarstellung dient als zusätzliche Orientierung, nicht als bereits pixelgenau vermessene Vorlage.
 - Nutzer wünscht Windows-Tests über GitHub Workflows. `windows-test.yml` baut die WPF-App und veröffentlicht eine selbstständige Windows-x64-Testversion als Actions-Artefakt. Ein erfolgreicher Build beweist weder die Optik noch die tatsächliche Performance auf dem Nutzergerät.
+- Windows-Workflow-Lauf 42289755839 für Commit 9b42ff6: Build und Publish erfolgreich, Artefakt `WinRinglight-test-win-x64` hochgeladen. Kein automatisierter GUI- oder Performance-Test; Nutzergerät-Prüfung steht aus. GitHub meldet eine Node-20-Action-Deprecation-Warnung, Lauf erfolgreich.
+
+## Nutzer-Messung und nächster Vergleich
+- Ausgangsversion mit 16-ms-Cursor-Timer: Nutzer berichtet auf GTX 1060 6 GB ca. 20 % GPU im Stillstand (inkl. übriges Windows), fast 60 % bei Mausbewegung; CPU ca. 0,1 %. Last des anderen Branches laut Nutzer selbst bei Bewegung nahe Idle. Zahlen sind keine isolierten Prozess- oder identischen Szenariotests und dürfen nicht als exakter App-Anteil interpretiert werden.
+- Anderer Branch drosselt Updates auf 33 ms und 2 DIP und ersetzt den Blur durch Glow-Geometrie. Sein RenderBench verwendet RenderTargetBitmap/Software und sein früher Vier-Streifen-Prototyp ist nicht mit dem späteren Code identisch; der Bench beweist keine tatsächliche GPU-Beschleunigung oder identische Optik.
+- Isolierter nächster Test: 33-ms-Timer ohne tote Zone, sonst unveränderte Ausgangsoptik. Vergleich auf Nutzergerät nötig; hohe Last kann weiterhin bestehen. Danach getrennt eine optisch korrekte und messbare Alternative für den vollflächigen Blur untersuchen, ohne fehlerhafte Pfadgeometrie zu übernehmen.

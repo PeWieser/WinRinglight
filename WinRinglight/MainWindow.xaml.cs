@@ -159,7 +159,8 @@ namespace WinRinglight
 
             _cursorTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-                Interval = TimeSpan.FromMilliseconds(16)
+                // Limit mask redraws to roughly 30 per second while keeping the cursor responsive.
+                Interval = TimeSpan.FromMilliseconds(33)
             };
             _cursorTimer.Tick += UpdateCursorCutout;
 
