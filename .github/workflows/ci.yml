@@ -84,6 +84,18 @@ jobs:
             Out-File -FilePath $out -Append -Encoding utf8
           Get-Content $out
 
+      - name: Render-Benchmark (Phase 3 Entscheidungsgrundlage)
+        id: bench
+        if: always() && steps.build.outputs.build_exit == '0'
+        shell: pwsh
+        run: |
+          $out = "bench.md"
+          "## Zeichenzeit pro Bild (gemessen)" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          dotnet run --project tools/RenderBench/RenderBench.csproj -c Release -v quiet 2>&1 |
+            Out-File -FilePath $out -Append -Encoding utf8
+          Get-Content $out
+
       - name: Ergebnisse zusammenfassen
         id: summary
         if: always()
@@ -135,6 +147,11 @@ jobs:
               $md += "</details>"
               $md += ""
             }
+          }
+
+          if (Test-Path "bench.md") {
+            $md += (Get-Content bench.md -Raw)
+            $md += ""
           }
 
           if (Test-Path "report.md") {
