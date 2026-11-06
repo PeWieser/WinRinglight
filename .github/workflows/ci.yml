@@ -52,9 +52,14 @@ jobs:
           dotnet test WinRinglight.Tests/WinRinglight.Tests.csproj -c Release -v minimal --logger "console;verbosity=normal" 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           $passed = (Select-String -Path $log -Pattern 'Passed!\s*-\s*Failed:\s*0' -AllMatches).Count
-          $m = Select-String -Path $log -Pattern 'Passed:\s*(\d+),\s*Failed:\s*(\d+),\s*Skipped:\s*(\d+)' | Select-Object -Last 1
+          # dotnet test schreibt: "Failed: 0, Passed: 13, Skipped: 0"
           $p=$null;$f=$null;$s=$null
-          if ($m) { $p=$m.Matches[0].Groups[1].Value; $f=$m.Matches[0].Groups[2].Value; $s=$m.Matches[0].Groups[3].Value }
+          $line = Select-String -Path $log -Pattern 'Failed:\s*\d+,\s*Passed:\s*\d+' | Select-Object -Last 1
+          if ($line) {
+            if ($line.Line -match 'Failed:\s*(\d+)')      { $f = $Matches[1] }
+            if ($line.Line -match 'Passed:\s*(\d+)')      { $p = $Matches[1] }
+            if ($line.Line -match 'Skipped:\s*(\d+)')     { $s = $Matches[1] }
+          }
           "test_exit=$code"    >> $env:GITHUB_OUTPUT
           "passed=$p"          >> $env:GITHUB_OUTPUT
           "failed=$f"          >> $env:GITHUB_OUTPUT

@@ -66,8 +66,9 @@ namespace WinRinglight.Tests
 
             var l = ScreenLayout.Compute(monitors, new[] { 0 }, false, false, 1.0);
 
-            Assert.True(l.WindowPixels.Left >= 0);
-            Assert.True(l.WindowPixels.Top >= 0);
+            // Der Glow-Rand darf links/oben ueber den Monitor hinausragen.
+            Assert.True(l.WindowPixels.Left >= -Pad);
+            Assert.True(l.WindowPixels.Top >= -Pad);
             Assert.True(l.WindowPixels.Right <= 2560 + 3840);
         }
 
@@ -111,7 +112,9 @@ namespace WinRinglight.Tests
         [Fact]
         public void Skalierung150Prozent_RingeBleibenInDipGleich()
         {
-            var monitors = new[] { Mon(0, 0, 2880, 1620) };
+            // taskbar: 0 -> Arbeitsflaeche = volle Hoehe, sonst waere die
+            // DIP-Hoehe (1620-40)/1.5 = 1053.33.
+            var monitors = new[] { Mon(0, 0, 2880, 1620, taskbar: 0) };
             const double scale = 1.5;
 
             var l = ScreenLayout.Compute(monitors, new[] { 0 }, false, false, scale);
