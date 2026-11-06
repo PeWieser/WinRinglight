@@ -129,6 +129,10 @@ namespace WinRinglight
         private int _lastMouseY = -1;
         private DateTime _lastMaskUpdate = DateTime.MinValue;
 
+        // Drosselt, wie oft das Loch um die Maus tatsaechlich neu gezeichnet wird.
+        private readonly CursorThrottle _throttle = new CursorThrottle();
+        private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+
         private Win32Point _mousePt = new Win32Point();
 
         public MainWindow()
@@ -313,6 +317,10 @@ namespace WinRinglight
 
             _isRinglightOn = turnOn;
 
+            // Beim Einschalten muss das Loch sofort an der richtigen Stelle sitzen,
+            // nicht erst beim naechsten Mauszucken.
+            _throttle.Reset();
+
             DoubleAnimation fadeAnimation = new DoubleAnimation
             {
                 To = _isRinglightOn ? 1.0 : 0.0,
@@ -446,29 +454,35 @@ namespace WinRinglight
         {
             if (!_isRinglightOn) return;
 
-            if (GetCursorPos(ref _mousePt))
+            if (!GetCursorPos(ref _mousePt)) return;
+
+            // Billige Vorpruefung: gar keine Bewegung -> gar keine Arbeit.
+            if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            Win32Point localPt = _mousePt;
+            ScreenToClient(hwnd, ref localPt);
+
+            // GetCursorPos/ScreenToClient liefern PHYSISICHE Pixel.
+            // WPF-Brushes rechnen in DIP, deshalb umrechnen.
+            System.Windows.Point cursorPx = new System.Windows.Point(localPt.X, localPt.Y);
+            System.Windows.Point relMouse = ScreenLayout.ToWindowDip(
+                cursorPx, _layout.WindowPixels, _layout.Scale);
+
+            // Erst hier entscheiden: Zeitabstand + tote Zone.
+            _throttle.MinIntervalMs = Config.CursorUpdateIntervalMs;
+            _throttle.DeadZoneDip = Config.CursorDeadZoneDip;
+
+            if (!_throttle.ShouldUpdate(relMouse.X, relMouse.Y, _clock.ElapsedMilliseconds))
             {
-                if (_mousePt.X == _lastMouseX && _mousePt.Y == _lastMouseY) return;
-
-                if ((DateTime.Now - _lastMaskUpdate).TotalMilliseconds < 16) return;    //change at most every ~16ms (60fps) to avoid excessive CPU usage
-                _lastMaskUpdate = DateTime.Now;
-
-                _lastMouseX = _mousePt.X;
-                _lastMouseY = _mousePt.Y;
-
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                Win32Point localPt = _mousePt;
-                ScreenToClient(hwnd, ref localPt);
-
-                // GetCursorPos/ScreenToClient liefern PHYSISICHE Pixel.
-                // WPF-Brushes rechnen in DIP, deshalb umrechnen.
-                System.Windows.Point cursorPx = new System.Windows.Point(localPt.X, localPt.Y);
-                System.Windows.Point relMouse = ScreenLayout.ToWindowDip(
-                    cursorPx, _layout.WindowPixels, _layout.Scale);
-
-                CursorCutoutMask.Center = relMouse;
-                CursorCutoutMask.GradientOrigin = relMouse;
+                return;
             }
+
+            _lastMouseX = _mousePt.X;
+            _lastMouseY = _mousePt.Y;
+
+            CursorCutoutMask.Center = relMouse;
+            CursorCutoutMask.GradientOrigin = relMouse;
         }
 
         private void AnimateBorderToRect(Border border, Rect targetRect, bool isAppleStyle)

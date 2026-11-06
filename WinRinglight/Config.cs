@@ -51,6 +51,17 @@ namespace WinRinglight
         // false = altes Verhalten (ganzer Desktop) als Rueckfallebene.
         public static bool ShrinkWindowToUsedArea = true;
 
+        // Mindestabstand zwischen zwei Loch-Aktualisierungen in ms.
+        // 0 = jedes Frame (altes Verhalten), 33 = ~30 Hz, 50 = 20 Hz.
+        // Das Loch liegt auf dem Wurzel-Grid, jede Aktualisierung kostet
+        // deshalb die volle Fensterflaeche. Hier wird nur die Haeufigkeit
+        // gedrosselt, nicht die Optik.
+        public static double CursorUpdateIntervalMs = 33.0;
+
+        // Mindestbewegung in DIP, ab der neu gezeichnet wird.
+        // 0 = jede Pixelbewegung, 2 = ruhiger (Maus-Zittern wird ignoriert).
+        public static double CursorDeadZoneDip = 2.0;
+
         // --- Save Settings ---
         public static void Save()
         {
