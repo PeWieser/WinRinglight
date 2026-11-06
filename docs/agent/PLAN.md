@@ -64,16 +64,34 @@ aktualisieren. Das ist Phase 2 (neu).
 Im Leerlauf 20 Timer-Ticks/s → 1 Tick/s (−95 %). Bei 30 Hz Eingabe geht
 nichts verloren.
 
-## Phase 3 – Weichzeichner durch Verläufe ersetzen  ← **als Nächstes**
+## Phase 3 – Weichzeichner durch Verläufe ersetzen  ← **✅ erledigt**
 
 | | Aufgabe | Status |
 |---|---|---|
-| 3.1 | Glow-Rand als `LinearGradientBrush` statt `BlurEffect` | ☐ |
-| 3.2 | Optik-Vergleich (Werte: Kantenweichheit in px) | ☐ |
-| 3.3 | `BitmapCache` prüfen/entfernen, wenn nutzlos | ☐ |
-| 3.4 | Schalter `UseGradientGlow` in den Einstellungen | ☐ |
+| 3.1 | Glow-Rand als `LinearGradientBrush` statt `BlurEffect` | ✅ 4 Kantenflächen |
+| 3.2 | Optik-Vergleich (Profil gegen Gauß geprüft) | ✅ Abweichung < 0,011 |
+| 3.3 | `BitmapCache` entfernt (war messbar schädlich) | ✅ |
+| 3.4 | Glow nur bei sichtbaren Änderungen neu bauen | ✅ `GlowRebuildPolicy` |
+| 3.5 | Glow und Kern animieren synchron | ✅ `AnimateGlowToRect` |
 
-## Phase 4 – Nur rechnen, wenn sich etwas bewegt
+**Gemessen im CI-Benchmark (Software-Rasterizer, ohne GPU):**
+
+| Setup | vorher | nachher | Faktor |
+|---|---|---|---|
+| 1 Monitor 1080p | 220,9 ms/Bild | **38,4 ms** | **5,8×** |
+| 1 von 3 (1080p) | 234,5 ms | **40,4 ms** | **5,8×** |
+| 1 von 2 (4K @150 %) | 899,7 ms | **154,3 ms** | **5,8×** |
+| 2 gespannt (4K) | 1760,9 ms | **279,2 ms** | **6,3×** |
+
+**Warum der Blur so teuer war:** Ein `BlurEffect` wirkt auf die **Bounds** des
+Elements. Die Border ist monitorgroß, also wurden alle 2 Mio. Pixel verwischt –
+für einen 60 px breiten Streifen. Der `BitmapCache` half nicht, sondern machte
+es 18 % teurer.
+
+**Warum es flüssig bleibt:** Der Glow hängt an Größe/Dicke/Farbe, nicht an der
+Mausposition. `GlowRebuildPolicy` verhindert den Neubau bei Bewegung (7 Tests).
+
+## Phase 4 – Nur rechnen, wenn sich etwas bewegt  ← **als Nächstes**
 
 | | Aufgabe | Status |
 |---|---|---|

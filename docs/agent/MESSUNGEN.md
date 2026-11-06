@@ -42,6 +42,27 @@ Die ersten beiden Zeilen sind aus `CursorThrottleTests`, die letzten beiden aus
 `IdlePolicyTests`. Beides sind Rechenwerte, keine Messungen am Gerät – aber sie
 sind exakt, weil die Logik deterministisch ist.
 
+## Phase 3 – Zeichenzeit pro Bild (CI-RenderBench, Commit `ac8539e`)
+
+Software-Rasterizer ohne GPU. Absolute Zahlen sind pessimistisch, das
+Verhältnis zählt.
+
+| Setup | Maske+Blur (alt) | Maske+Verlauf (neu) | Faktor |
+|---|---|---|---|
+| 1 Monitor 1080p | 220,9 ms | 38,4 ms | **5,8×** |
+| 1 von 3 (1080p) | 234,5 ms | 40,4 ms | **5,8×** |
+| 1 von 2 (4K @150 %) | 899,7 ms | 154,3 ms | **5,8×** |
+| 2 gespannt (4K) | 1760,9 ms | 279,2 ms | **6,3×** |
+
+Zerlegung der Kosten (1080p):
+* Maske allein: 2,1× Basis
+* Blur allein: **11–16× Basis** ← der eigentliche Kostentreiber
+* BitmapCache: **+18 %** (schädlich, entfernt)
+* Verlauf statt Blur: **2,08× Basis** = praktisch identisch mit "ohne Blur"
+
+Optik-Prüfung: Der Verlauf folgt dem alten Gauß-Profil (sigma = Radius/3) mit
+maximaler Abweichung 0,011 — der Rand sieht gleich aus.
+
 ## Verworfener Plan
 
 Phase 2 sollte ursprünglich die Loch-Maske auf die Ringe verschieben.
@@ -74,3 +95,9 @@ Messung: Task-Manager → Details → `WinRinglight.exe`, 60 s beobachten.
 | 42241553898 | bd38211 | ❌ Build | CS0133 `const` aus Methodenaufruf |
 | 42241780193 | cfd6c66 | ❌ | 43 grün, 1 rot (`ShouldWalk(0,0)`) |
 | 42242012846 | 424cb9e | ✅ | **45 grün** |
+| 42244759720 | 1d36124 | ❌ Build | 16× CS0104 (`Color`/`Point` mehrdeutig) |
+| 42245176230 | 93887c4 | ❌ Build | dieselben Fehler, Details im Kommentar |
+| 42245540763 | e273f8f | ❌ | Fehler behoben, Bench ohne Verlaufsmessung |
+| 42246645787 | 4340b00 | ✅ | Bench zeigt 5,8× |
+| 42247801523 | ceb0520 | ✅ | **67 grün** |
+| 42249044614 | ac8539e | ✅ | **67 grün, Glow animiert synchron** |
