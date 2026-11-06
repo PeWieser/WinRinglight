@@ -49,22 +49,40 @@ jobs:
         shell: pwsh
         run: |
           $log = "test.log"
-          dotnet test WinRinglight.Tests/WinRinglight.Tests.csproj -c Release -v minimal --logger "console;verbosity=normal" 2>&1 | Tee-Object -FilePath $log
+          dotnet test WinRinglight.Tests/WinRinglight.Tests.csproj -c Release -v minimal --logger "trx;LogFileName=results.trx" 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           $passed = (Select-String -Path $log -Pattern 'Passed!\s*-\s*Failed:\s*0' -AllMatches).Count
           # dotnet test schreibt: "Failed: 0, Passed: 13, Skipped: 0"
           $p=$null;$f=$null;$s=$null
-          $line = Select-String -Path $log -Pattern 'Failed:\s*\d+,\s*Passed:\s*\d+' | Select-Object -Last 1
-          if ($line) {
-            if ($line.Line -match 'Failed:\s*(\d+)')      { $f = $Matches[1] }
-            if ($line.Line -match 'Passed:\s*(\d+)')      { $p = $Matches[1] }
-            if ($line.Line -match 'Skipped:\s*(\d+)')     { $s = $Matches[1] }
+          $trx = Get-ChildItem -Path . -Filter results.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trx) {
+            [xml]$x = Get-Content $trx.FullName
+            $c = $x.TestRun.ResultSummary.Counters
+            $p = $c.passed; $f = $c.failed; $s = $c.notExecuted
+          } else {
+            $line = Select-String -Path $log -Pattern 'Failed:\s*\d+,\s*Passed:\s*\d+' | Select-Object -Last 1
+            if ($line) {
+              if ($line.Line -match 'Failed:\s*(\d+)')  { $f = $Matches[1] }
+              if ($line.Line -match 'Passed:\s*(\d+)')  { $p = $Matches[1] }
+            }
           }
           "test_exit=$code"    >> $env:GITHUB_OUTPUT
           "passed=$p"          >> $env:GITHUB_OUTPUT
           "failed=$f"          >> $env:GITHUB_OUTPUT
           "skipped=$s"         >> $env:GITHUB_OUTPUT
           if ($code -ne 0) { exit $code }
+
+      - name: Layout-Report erzeugen
+        id: report
+        if: always() && steps.build.outputs.build_exit -eq '0'
+        shell: pwsh
+        run: |
+          $out = "report.md"
+          "## Fenstergroesse vorher / nachher" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          dotnet run --project tools/LayoutReport/LayoutReport.csproj -c Release -v quiet 2>&1 |
+            Out-File -FilePath $out -Append -Encoding utf8
+          Get-Content $out
 
       - name: Ergebnisse zusammenfassen
         id: summary
@@ -106,6 +124,24 @@ jobs:
             }
           }
 
+          if (Test-Path "build.log") {
+            $warn = Select-String -Path build.log -Pattern ': warning ' | Select-Object -First 5 | ForEach-Object { $_.Line.Trim() }
+            if ($warn) {
+              $md += "<details><summary>Build-Warnungen</summary>"
+              $md += ""
+              $md += '```'
+              $md += $warn
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          }
+
+          if (Test-Path "report.md") {
+            $md += (Get-Content report.md -Raw)
+            $md += ""
+          }
+
           $md += "Commit: ``${{ github.sha }}``"
           $md += "Branch: ``${{ github.ref_name }}``"
           $md += "Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -133,4 +169,6 @@ jobs:
           path: |
             build.log
             test.log
+            report.md
+            results.trx
           retention-days: 7
