@@ -122,8 +122,38 @@ jobs:
 
           # Diagnose direkt in den Kommentar, weil Artifact-Downloads aus der
           # Sandbox nicht erreichbar sind.
-          if (Test-Path "test.log") {
-            $fail = Select-String -Path test.log -Pattern '(error|Failed |Error Message|Assert\.|Stack Trace|Exception)' -Context 0,2 |
+          # Fehlgeschlagene Tests zuerst aus der TRX - das ist die einzige
+          # Quelle mit Methode, Meldung und Zeile. Das Log-Format von
+          # "dotnet test" ist nicht verlaesslich genug zum Filtern.
+          $trxFile = Get-ChildItem -Path . -Filter results.trx -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($trxFile) {
+            [xml]$tx = Get-Content $trxFile.FullName
+            $failed = $tx.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq "Failed" }
+            if ($failed) {
+              $md += "<details open><summary>Fehlgeschlagene Tests ($($failed.Count))</summary>"
+              $md += ""
+              $md += '```'
+              foreach ($ft in ($failed | Select-Object -First 15)) {
+                $md += "$($ft.testName)"
+                $msg = $ft.Output.ErrorInfo.Message
+                if ($msg) {
+                  foreach ($line in ($msg -split "`n" | Select-Object -First 6)) {
+                    $md += "    $($line.Trim())"
+                  }
+                }
+                $st = $ft.Output.ErrorInfo.StackTrace
+                if ($st) {
+                  $first = ($st -split "`n" | Where-Object { $_ -match "\.cs:line" } | Select-Object -First 1)
+                  if ($first) { $md += "    -> $($first.Trim())" }
+                }
+                $md += ""
+              }
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          } elseif (Test-Path "test.log") {
+            $fail = Select-String -Path test.log -Pattern '(error CS|Failed!|Error Message)' -Context 0,3 |
                     Select-Object -First 40 | ForEach-Object { $_.Line }
             if ($fail) {
               $md += "<details><summary>Test-Fehler (Auszug)</summary>"

@@ -619,19 +619,14 @@ namespace WinRinglight
         /// </summary>
         private void AnimateGlowToRect(Canvas glow, Rect targetRect, bool isAppleStyle)
         {
+            // WICHTIG: Das Canvas bleibt immer auf dem aeusseren Ring-Rechteck.
+            // Der Innenabstand des Kerns (Apple-Stil) wird NICHT hier abgezogen,
+            // sondern beim Zeichnen des Saums beruecksichtigt. Sonst verschiebt
+            // sich der Saum gegenueber dem Kern.
             double targetX = targetRect.X;
             double targetY = targetRect.Y;
             double targetW = targetRect.Width;
             double targetH = targetRect.Height;
-
-            if (isAppleStyle)
-            {
-                // Gleicher Innenabstand wie beim Kern (siehe AnimateBorderToRect).
-                targetX += 20;
-                targetY += 20;
-                targetW -= 40;
-                targetH -= 40;
-            }
 
             double pad = RinglightGlowPad;
 
@@ -994,7 +989,10 @@ namespace WinRinglight
 
             if (pieces.Count == 0) return;
 
-            double pad = RinglightGlowPad;
+            // Der Kern ist im Apple-Stil um 20 DIP eingerueckt - der Saum muss
+            // diesen Versatz mitmachen, sonst liegt er neben dem Kern.
+            double inset = isAppleStyle ? 20.0 : 0.0;
+            double pad = RinglightGlowPad + inset;
 
             System.Windows.Media.TranslateTransform shift =
                 new System.Windows.Media.TranslateTransform(pad, pad);

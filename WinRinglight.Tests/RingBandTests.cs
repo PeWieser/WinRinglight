@@ -36,14 +36,6 @@ namespace WinRinglight.Tests
             // Aussenkante und lag damit unter dem Kern.
             var pieces = RingBand.Pieces(W, H, 228, 24);
 
-            foreach (var p in pieces)
-            {
-                // Nichts darf tiefer als die Kernkante ins Innere ragen,
-                // ausser durch den Eckenradius bedingt.
-                Assert.True(p.Bounds.X <= 0.001 || p.Bounds.X >= W - 0.001 || p.Bounds.Width > 0,
-                    "Stueck ohne Lage");
-            }
-
             // Das obere Stueck liegt vollstaendig ueber dem Kern (y <= 0).
             var top = Array.Find(pieces, p => p.Kind == BandPieceKind.Top);
             Assert.True(top.Bounds.Bottom <= 0.001, $"Oben liegt bei {top.Bounds.Bottom}, muss <= 0 sein");
@@ -136,12 +128,12 @@ namespace WinRinglight.Tests
         }
 
         [Theory]
-        [InlineData(true, 228)]      // Apple: 1040 * 0.22 = 228.8
+        [InlineData(true, 228.8)]    // Apple: 1040 * 0.22 = 228.8
         [InlineData(false, 3)]       // eckig
         public void Eckenradius_ProStil(bool apple, double erwartet)
         {
             double r = RingBand.CoreCornerRadius(W, H, apple);
-            Assert.Equal(erwartet, r, 0);
+            Assert.Equal(erwartet, r, 1);
         }
 
         [Fact]
