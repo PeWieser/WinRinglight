@@ -2,6 +2,13 @@ using System;
 using System.Windows;
 using System.Windows.Media;
 
+// Das Projekt nutzt WPF UND WinForms. Dadurch sind Color und Point mehrdeutig
+// (System.Drawing vs. System.Windows). Aliase statt einzelner Qualifizierungen -
+// sonst kommt der Fehler beim naechsten neuen Typ zurueck.
+using Color = System.Windows.Media.Color;
+using Point = System.Windows.Point;
+using Brush = System.Windows.Media.Brush;
+
 namespace WinRinglight
 {
     /// <summary>

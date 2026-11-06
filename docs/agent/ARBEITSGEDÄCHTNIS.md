@@ -120,9 +120,18 @@ Effects werden über die Bounds auf eine Zwischenfläche gerechnet.
   `Nullable`; `net10.0` kann C# 13. Unkritisch.
 * **Nicht lokal kompilierbar** – also keine API erfinden. Bei Unsicherheit
   lieber die vorhandene API benutzen (z. B. `Rect` statt neuer Typen).
-* **`Point` ist mehrdeutig**: das Projekt nutzt WPF *und* WinForms, also gibt es
-  `System.Drawing.Point` und `System.Windows.Point`. Immer voll qualifizieren,
-  wenn die Datei auch von WinForms-Seite erreichbar ist.
+* **`Point` UND `Color` sind mehrdeutig**: das Projekt nutzt WPF *und* WinForms,
+  also gibt es `System.Drawing.Point`/`System.Drawing.Color` und die
+  WPF-Varianten. **Diesen Fehler habe ich dreimal gemacht** (Phase 1, Phase 3
+  in `RingGlow.cs`, Phase 3 in `MainWindow.xaml.cs`).
+  **Regel ab jetzt:** In JEDER neuen Datei, die mit Grafik zu tun hat, stehen
+  ganz oben Aliase:
+  ```csharp
+  using Color = System.Windows.Media.Color;
+  using Point = System.Windows.Point;
+  ```
+  Das behebt alle Stellen auf einmal und ist billiger als einzelne
+  Qualifizierungen.
 * **GitHub-Ausdrücke sind nicht PowerShell:** `-eq` im `if:` einer Workflow-Datei
   ist ein Syntaxfehler, der die **ganze Datei** ungültig macht („workflow file
   issue"). Richtig ist `==`. → Vor jedem Push YAML prüfen.

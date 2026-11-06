@@ -797,7 +797,7 @@ namespace WinRinglight
         /// Wird nur bei Aenderungen von Groesse, Dicke oder Farbe aufgerufen -
         /// NICHT bei Mausbewegungen.
         /// </summary>
-        private void RebuildGlow(Canvas glow, Rect rect, double thickness, Color color)
+        private void RebuildGlow(Canvas glow, Rect rect, double thickness, System.Windows.Media.Color color)
         {
             glow.Children.Clear();
 
@@ -829,7 +829,7 @@ namespace WinRinglight
                 new System.Windows.Point(1, 0), new System.Windows.Point(0, 0));
         }
 
-        private static void AddGlowStrip(Canvas parent, Rect area, Color color,
+        private static void AddGlowStrip(Canvas parent, Rect area, System.Windows.Media.Color color,
             System.Windows.Point from, System.Windows.Point to)
         {
             if (area.Width <= 0.5 || area.Height <= 0.5) return;

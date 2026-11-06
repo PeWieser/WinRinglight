@@ -4,6 +4,10 @@ using System.Windows.Media;
 using WinRinglight;
 using Xunit;
 
+// Siehe RingGlow.cs: WPF + WinForms im selben Projekt machen Color/Point mehrdeutig.
+using Color = System.Windows.Media.Color;
+using Point = System.Windows.Point;
+
 namespace WinRinglight.Tests
 {
     public class RingGlowTests
