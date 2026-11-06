@@ -96,6 +96,10 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "TabPerformance", new Dictionary<string, string> {
+                { "de", "Leistung" },
+                { "en", "Performance" }
+            }},
             { "CursorFps", new Dictionary<string, string> {
                 { "de", "Cursor-Aussparung: maximale FPS (1–240)" },
                 { "en", "Cursor cutout: maximum FPS (1–240)" }

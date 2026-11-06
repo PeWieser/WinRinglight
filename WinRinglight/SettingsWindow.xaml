@@ -175,8 +175,7 @@
                 </StackPanel>
             </TabItem>
 
-            <TabItem x:Name="TabSystem" Header="System">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="650">
+            <TabItem x:Name="TabPerformance" Header="Leistung">
                 <StackPanel Margin="0,15,0,0">
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
@@ -194,6 +193,11 @@
                         </StackPanel>
                     </Border>
 
+                </StackPanel>
+            </TabItem>
+
+            <TabItem x:Name="TabSystem" Header="System">
+                <StackPanel Margin="0,15,0,0">
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
                             <TextBlock x:Name="LblMonitor" Text="Monitor Selection" FontWeight="Bold" Margin="0,0,0,10"/>
@@ -292,7 +296,6 @@
                     </TextBlock>
 
                 </StackPanel>
-                </ScrollViewer>
             </TabItem>
 
         </TabControl>

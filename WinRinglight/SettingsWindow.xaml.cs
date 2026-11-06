@@ -37,6 +37,7 @@ namespace WinRinglight
             // Load texts from config
             TabAppearance.Header = Config.GetText("TabAppearance");
             TabSystem.Header = Config.GetText("TabSystem");
+            TabPerformance.Header = Config.GetText("TabPerformance");
             LblCursorFps.Text = Config.GetText("CursorFps");
             LblUnlimitedFps.Text = Config.GetText("CursorFpsUnlimited");
             LblFpsWarning.Text = Config.GetText("CursorFpsWarning");
