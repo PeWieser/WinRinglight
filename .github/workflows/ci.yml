@@ -96,6 +96,28 @@ jobs:
             Out-File -FilePath $out -Append -Encoding utf8
           Get-Content $out
 
+      - name: Optik-Pruefung des Saums (echter WPF-Render)
+        id: glow
+        if: always() && steps.build.outputs.build_exit == '0'
+        shell: pwsh
+        run: |
+          $out = "glow.md"
+          "## Optik des Saums (gerendert, gemessen)" | Out-File -FilePath $out -Encoding utf8
+          "" | Out-File -FilePath $out -Append -Encoding utf8
+          dotnet run --project tools/GlowPreview/GlowPreview.csproj -c Release -v quiet -- glowpreview 2>&1 |
+            Out-File -FilePath $out -Append -Encoding utf8
+          "glow_exit=$LASTEXITCODE" >> $env:GITHUB_OUTPUT
+          Get-Content $out
+          Get-ChildItem glowpreview -ErrorAction SilentlyContinue | Select-Object Name, Length
+
+      - name: Optik-Bilder hochladen
+        if: always() && steps.build.outputs.build_exit == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: glow-preview-${{ github.run_number }}
+          path: glowpreview/
+          retention-days: 14
+
       - name: Ergebnisse zusammenfassen
         id: summary
         if: always()
@@ -188,6 +210,11 @@ jobs:
               $md += "</details>"
               $md += ""
             }
+          }
+
+          if (Test-Path "glow.md") {
+            $md += (Get-Content glow.md -Raw)
+            $md += ""
           }
 
           if (Test-Path "bench.md") {

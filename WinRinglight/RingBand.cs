@@ -196,7 +196,7 @@ namespace WinRinglight
                 geometry.Freeze();
 
                 Brush brush = piece.IsCorner
-                    ? CornerBrush(color, opacity, piece.ArcCenter, r, b)
+                    ? CornerBrush(color, opacity, piece.ArcCenter, r, b, offsetX, offsetY)
                     : StraightBrush(color, opacity, piece.Kind);
 
                 result.Add(new PieceVisual(piece, geometry, brush));
@@ -229,7 +229,8 @@ namespace WinRinglight
         /// ganze sichtbare Bereich im fast durchsichtigen Teil und der Saum
         /// waere an den Ecken praktisch weg.
         /// </summary>
-        private static Brush CornerBrush(Color color, double opacity, Point center, double innerRadius, double band)
+        private static Brush CornerBrush(Color color, double opacity, Point center, double innerRadius, double band,
+            double offsetX, double offsetY)
         {
             double outerRadius = innerRadius + band;
             if (outerRadius <= 0) outerRadius = 1;
@@ -240,11 +241,15 @@ namespace WinRinglight
             double[] offsets = RingGlow.DefaultStops;
             double[] alphas = RingGlow.DefaultAlphas;
 
+            // MappingMode.Absolute bezieht sich auf das ELEMENT, nicht auf die
+            // Geometrie. Die Geometrie wird gleich um (offsetX, offsetY)
+            // verschoben - der Mittelpunkt MUSS mitwandern, sonst sitzt der
+            // Verlauf neben der Ecke und die Ecke wird ein harter Klecks.
             var brush = new RadialGradientBrush
             {
                 MappingMode = BrushMappingMode.Absolute,
-                Center = center,
-                GradientOrigin = center,
+                Center = new Point(center.X + offsetX, center.Y + offsetY),
+                GradientOrigin = new Point(center.X + offsetX, center.Y + offsetY),
                 RadiusX = outerRadius,
                 RadiusY = outerRadius,
                 SpreadMethod = GradientSpreadMethod.Pad,
