@@ -132,12 +132,35 @@ namespace WinRinglight
                 box = Rect.Union(box, targets[i]);
             }
 
+            // Flaeche, die ueberhaupt von einem Bildschirm abgedeckt ist.
+            List<Rect> screens = new List<Rect>(monitors.Count);
+            foreach (MonitorInfo m in monitors)
+            {
+                screens.Add(m.Bounds);
+            }
+
             double pad = GlowPaddingDip * scale;
-            Rect window = new Rect(
+            Rect padded = new Rect(
                 box.X - pad,
                 box.Y - pad,
                 box.Width + (2 * pad),
                 box.Height + (2 * pad));
+
+            // Der Rand darf nur dort entstehen, wo auch ein Bildschirm ist:
+            // ausserhalb des Monitors waere der Glow ohnehin unsichtbar, wuerde
+            // aber die Fensterflaeche vergroessern (und damit die Arbeit).
+            // Das garantiert: nie groesser als das alte Vollbild-Fenster.
+            Rect screenArea = screens[0];
+            for (int i = 1; i < screens.Count; i++)
+            {
+                screenArea = Rect.Union(screenArea, screens[i]);
+            }
+
+            Rect window = Rect.Intersect(padded, screenArea);
+            if (window.IsEmpty || window.Width < 1 || window.Height < 1)
+            {
+                window = box;   // Sicherheitsnetz: lieber ohne Rand als unsichtbar
+            }
 
             // 4) Ringe in DIP, relativ zur Fensterecke.
             List<Rect> rings = new List<Rect>(targets.Count);
