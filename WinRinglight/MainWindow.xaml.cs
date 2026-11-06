@@ -575,35 +575,13 @@ namespace WinRinglight
             CursorCutoutMask.GradientOrigin = relMouse;
         }
 
-        private void AnimateBorderToRect(Border border, Rect targetRect, bool isAppleStyle)
+        /// <summary>
+        /// Animiert ein Canvas auf die Zielgroesse des Kerns (aeusseres
+        /// Ring-Rechteck, inklusive Saum-Platz).
+        /// </summary>
+        private void AnimateBorderToRect(Canvas target, Rect targetRect, bool isAppleStyle)
         {
-            double targetX = targetRect.X;
-            double targetY = targetRect.Y;
-            double targetW = targetRect.Width;
-            double targetH = targetRect.Height;
-
-            if (isAppleStyle)
-            {
-                targetX += 20;
-                targetY += 20;
-                targetW -= 40;
-                targetH -= 40;
-            }
-
-            var duration = TimeSpan.FromSeconds(0.4); 
-            var ease = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
-
-            ThicknessAnimation marginAnim = new ThicknessAnimation { To = new Thickness(targetX, targetY, 0, 0), Duration = duration, EasingFunction = ease };
-            DoubleAnimation widthAnim = new DoubleAnimation { To = targetW, Duration = duration, EasingFunction = ease };
-            DoubleAnimation heightAnim = new DoubleAnimation { To = targetH, Duration = duration, EasingFunction = ease };
-
-            Timeline.SetDesiredFrameRate(marginAnim, 60);
-            Timeline.SetDesiredFrameRate(widthAnim, 60);
-            Timeline.SetDesiredFrameRate(heightAnim, 60);
-
-            border.BeginAnimation(FrameworkElement.MarginProperty, marginAnim);
-            border.BeginAnimation(FrameworkElement.WidthProperty, widthAnim);
-            border.BeginAnimation(FrameworkElement.HeightProperty, heightAnim);
+            AnimateGlowToRect(target, targetRect, isAppleStyle);
         }
 
         /// <summary>
@@ -658,22 +636,13 @@ namespace WinRinglight
                 AnimateGlowToRect(_glowPanels[i], (Rect)_glowPanels[i].Tag, isAppleStyle);
             }
 
-            for (int i = 0; i < _coreBorders.Count; i++)
+            for (int i = 0; i < _corePieces.Count; i++)
             {
-                Border border = _coreBorders[i];
-                Rect baseRect = (Rect)border.Tag;
+                Rect baseRect = (Rect)_corePieces[i].Tag;
+                AnimateGlowToRect(_glowPanels[i], baseRect, isAppleStyle);
 
-                AnimateBorderToRect(border, baseRect, isAppleStyle);
-
-                // Einzige Quelle fuer den Eckenradius: RingBand. Kern und Saum
-                // muessen dieselbe Kontur haben, sonst entstehen Kanten.
-                var (cw, ch) = CoreSize(baseRect, isAppleStyle);
-                border.CornerRadius = new CornerRadius(
-                    RingBand.CoreCornerRadius(cw, ch, isAppleStyle));
-
-                // Beim Stilwechsel aendert sich der Eckenradius - der Saum muss
-                // mit. Ohne das behielt er die alte (eckige) Kontur und stand
-                // an den runden Ecken als Leuchtstreifen heraus.
+                // Kern und Saum stecken beide im Glow-Canvas. Beim Stilwechsel
+                // aendert sich der Eckenradius - beides muss neu gebaut werden.
                 ForgetGlowState(i);
                 RebuildGlowIfNeeded(i, baseRect, isAppleStyle);
             }
@@ -694,8 +663,10 @@ namespace WinRinglight
         // Der Kern ist eine Border (dicker Rahmen). Der Glow besteht aus vier
         // Verlaufsflaechen und ist deshalb ein Canvas - ein BorderBrush kann nur
         // eine Richtung. Beide Listen laufen parallel.
-        private readonly System.Collections.Generic.List<System.Windows.Controls.Border> _coreBorders
-            = new System.Collections.Generic.List<System.Windows.Controls.Border>();
+        // Der Kern ist ein Ringpfad (Pfad mit EvenOdd), kein Border - siehe
+        // AddRinglight. Ein Border wuerde den Innensaum verdecken.
+        private readonly System.Collections.Generic.List<System.Windows.Shapes.Path> _corePieces
+            = new System.Collections.Generic.List<System.Windows.Shapes.Path>();
 
         // Rand um den Kern herum, in den der Saum gezeichnet wird.
         // ScreenLayout.GlowPaddingDip (48) ist der Platz im FENSTER - beides
@@ -793,9 +764,9 @@ namespace WinRinglight
             // deshalb ueber die HwndSource, nicht ueber Left/Top/Width/Height in DIP).
             ApplyWindowRect(layout.WindowPixels);
 
-            if (_coreBorders.Count != layout.Rings.Count)
+            if (_corePieces.Count != layout.Rings.Count)
             {
-                _coreBorders.Clear();
+                _corePieces.Clear();
                 _glowPanels.Clear();
                 _glowStates.Clear();
                 MainGrid.Children.Clear();
@@ -817,7 +788,7 @@ namespace WinRinglight
                     var rect = layout.Rings[i];
 
                     var glow = _glowPanels[i];
-                    var core = _coreBorders[i];
+                    var core = _corePieces[i];
 
                     glow.Tag = rect;
                     core.Tag = rect;
@@ -825,7 +796,8 @@ namespace WinRinglight
                     // WICHTIG fuer die Fluessigkeit: Glow und Kern muessen
                     // gemeinsam wandern. Wuerde der Kern animieren und der Glow
                     // springen, sieht man einen Versatz.
-                    AnimateBorderToRect(core, rect, isApple);
+                    // Kern und Saum stecken gemeinsam im Glow-Canvas.
+
                     AnimateGlowToRect(glow, rect, isApple);
 
                     // Der Glow wird sofort fuer die ENDGROESSE gebaut - nicht
@@ -901,20 +873,23 @@ namespace WinRinglight
             _glowPanels.Add(glow);
             MainGrid.Children.Add(glow);
 
-            System.Windows.Controls.Border coreBorder = new System.Windows.Controls.Border
+            // Der Kern ist ein Path, keine Border. Grund: Der weiche Rand wirkt
+            // BEIDSEITIG (nach aussen auf den Desktop, nach innen in das Loch).
+            // Mit einer Border deckt der Kern seinen ganzen Kasten ab - der
+            // Innensaum laege darunter und waere unsichtbar. Als Ringpfad
+            // bleibt das Loch wirklich frei.
+            var core = new System.Windows.Shapes.Path
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                Margin = new Thickness(x, y, 0, 0),
-                Width = w,
-                Height = h
+                IsHitTestVisible = false,
             };
 
-            RenderOptions.SetEdgeMode(coreBorder, EdgeMode.Unspecified);
+            RenderOptions.SetEdgeMode(core, EdgeMode.Unspecified);
 
-            coreBorder.Tag = new Rect(x, y, w, h);
-            _coreBorders.Add(coreBorder);
-            MainGrid.Children.Add(coreBorder);
+            core.Tag = new Rect(x, y, w, h);
+            _corePieces.Add(core);
+            MainGrid.Children.Add(core);
         }
 
         /// <summary>
@@ -933,6 +908,68 @@ namespace WinRinglight
         /// Seiten lagen sie unter dem Kern. Deshalb dieselbe Kontur wie der
         /// Kern, nur um die Bandbreite nach aussen versetzt.
         /// </summary>
+        /// <summary>
+        /// Baut den Kern als Ringpfad: aussen abgerundetes Rechteck, innen ein
+        /// zweites - zusammen ein Rahmen mit rundem Loch. EvenOdd laesst das
+        /// Innere offen, damit der Innensaum darunter sichtbar bleibt.
+        /// </summary>
+        internal static System.Windows.Media.Geometry CoreRingGeometry(
+            double width, double height, double thickness, double cornerRadius)
+        {
+            double r = System.Math.Max(0, System.Math.Min(cornerRadius, System.Math.Min(width, height) / 2.0));
+
+            var figure = new System.Windows.Media.PathFigure
+            {
+                IsClosed = true,
+                IsFilled = true,
+            };
+
+            AddRoundedRect(figure, 0, 0, width, height, r);
+
+            // Innenring - entgegengesetzter Umlaufsinn ist mit EvenOdd nicht
+            // noetig, aber so bleibt es auch bei Nonzero korrekt.
+            double iw = System.Math.Max(0.01, width - 2 * thickness);
+            double ih = System.Math.Max(0.01, height - 2 * thickness);
+            double ir = System.Math.Max(0, System.Math.Min(r - thickness, System.Math.Min(iw, ih) / 2.0));
+            AddRoundedRect(figure, thickness, thickness, iw, ih, ir);
+
+            var geometry = new System.Windows.Media.PathGeometry();
+            geometry.Figures.Add(figure);
+            geometry.FillRule = System.Windows.Media.FillRule.EvenOdd;
+            geometry.Freeze();
+            return geometry;
+        }
+
+        private static void AddRoundedRect(System.Windows.Media.PathFigure figure,
+            double x, double y, double w, double h, double r)
+        {
+            if (w <= 0 || h <= 0) return;
+
+            r = System.Math.Max(0, System.Math.Min(r, System.Math.Min(w, h) / 2.0));
+
+            if (r <= 0.01)
+            {
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y + h), true));
+                figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y + h), true));
+                return;
+            }
+
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + r, y), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + w, y + r),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + w, y + h - r), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + w - r, y + h),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x + r, y + h), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x, y + h - r),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+            figure.Segments.Add(new System.Windows.Media.LineSegment(new System.Windows.Point(x, y + r), true));
+            figure.Segments.Add(new System.Windows.Media.ArcSegment(new System.Windows.Point(x + r, y),
+                new System.Windows.Size(r, r), 0, false, System.Windows.Media.SweepDirection.Clockwise, true));
+        }
+
         /// <summary>
         /// Tatsaechliche Masse des Kerns in DIP. Der Kern ist um den
         /// Apple-Innenabstand kleiner als das Ring-Rechteck; im eckigen Stil
@@ -976,36 +1013,52 @@ namespace WinRinglight
         {
             glow.Children.Clear();
 
-            // Das Band ist konstant breit und liegt AUSSERHALB der Kernkante.
-            // Frueher kam es vom BlurEffect, der ueber die Kernkante hinaus
-            // auslief - dieselbe Breite, aber ohne die Kosten (Blur rechnet
-            // ueber die ganze Bounds-Flaeche, nicht nur ueber den Streifen).
             double band = RingGlow.WidthFor(thickness);
-
             if (band <= 0 || coreW <= 0 || coreH <= 0) return;
 
             double radius = RingBand.CoreCornerRadius(coreW, coreH, isAppleStyle);
 
-            // Der Kern ist im Apple-Stil um 20 DIP eingerueckt - der Saum muss
-            // diesen Versatz mitmachen, sonst liegt er neben dem Kern.
+            // Der Kern ist im Apple-Stil um 20 DIP eingerueckt.
             double inset = isAppleStyle ? 20.0 : 0.0;
             double pad = RinglightGlowPad + inset;
-            double offX = pad, offY = pad;
-            var pieces = RingBand.Build(color, 1.0, coreW, coreH, radius, band, offX, offY);
 
-            if (pieces.Count == 0) return;
+            double innerW = Math.Max(0.01, coreW - 2 * thickness);
+            double innerH = Math.Max(0.01, coreH - 2 * thickness);
 
-            foreach (var piece in pieces)
+            // Der Kern als Ring (EvenOdd): aussen abgerundet, innen das Loch.
+            // Als Border wuerde er die ganze Flaeche decken und den Innensaum
+            // verdecken - deshalb ein Pfad.
+            var frozen = new System.Windows.Media.SolidColorBrush(color);
+            frozen.Freeze();
+
+            glow.Children.Add(new System.Windows.Shapes.Path
             {
-                var path = new System.Windows.Shapes.Path
+                Data = CoreRingGeometry(coreW, coreH, thickness, radius),
+                Fill = frozen,
+                IsHitTestVisible = false,
+                RenderTransform = new System.Windows.Media.TranslateTransform(pad, pad),
+            });
+
+            // Was der Blur frueher aus dem Kern heraus in das Loch hinein
+            // streute: ein weicher Verlauf ueber die volle Lochbreite.
+            glow.Children.Add(new System.Windows.Shapes.Path
+            {
+                Data = new System.Windows.Media.RectangleGeometry(
+                    new Rect(pad + thickness, pad + thickness, innerW, innerH)),
+                Fill = RingGlow.CoreInside(color, GlowOpacity, innerW, innerH, band),
+                IsHitTestVisible = false,
+            });
+
+            // Der Saum: aussen um die Aussenkante, innen um die Innenkante.
+            // Liegt ueber dem Loch-Verlauf, damit die Innenkante weich wird.
+            foreach (var piece in RingBand.Build(color, GlowOpacity, coreW, coreH, thickness, radius, band, pad, pad))
+            {
+                glow.Children.Add(new System.Windows.Shapes.Path
                 {
                     Data = piece.Geometry,
                     Fill = piece.Brush,
                     IsHitTestVisible = false,
-                };
-
-                // Der Versatz steckt schon in der Geometrie (siehe RingBand.Build).
-                glow.Children.Add(path);
+                });
             }
         }
 
@@ -1034,25 +1087,16 @@ namespace WinRinglight
             var frozen = new SolidColorBrush(lightColor);
             frozen.Freeze();
 
-            foreach (var border in _coreBorders)
-            {
-                border.BorderThickness = new Thickness(thickness);
-
-                bool apple = Config.Current.VisualStyleIndex == 0;
-                var (cw, ch) = CoreSize((Rect)border.Tag, apple);
-                border.CornerRadius = new CornerRadius(RingBand.CoreCornerRadius(cw, ch, apple));
-
-                border.BorderBrush = frozen;
-            }
-
+            // Der Kern ist jetzt Teil des Glow-Canvas (siehe RebuildGlow) -
+            // Farbe und Dicke landen deshalb ueber den Neubau unten.
             // Der Glow braucht bei jeder Aenderung von Farbe oder Dicke
             // neue Verlaeufe - aber nur dann. Nicht pro Frame und nicht pro
             // Mausbewegung, sonst entsteht genau das Ruckeln, das vermieden
             // werden soll.
             bool isAppleStyle = Config.Current.VisualStyleIndex == 0;
-            for (int i = 0; i < _glowPanels.Count && i < _coreBorders.Count; i++)
+            for (int i = 0; i < _glowPanels.Count && i < _corePieces.Count; i++)
             {
-                RebuildGlowIfNeeded(i, (Rect)_coreBorders[i].Tag, isAppleStyle);
+                RebuildGlowIfNeeded(i, (Rect)_corePieces[i].Tag, isAppleStyle);
             }
 
             double baseH = SystemParameters.PrimaryScreenHeight;

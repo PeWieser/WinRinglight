@@ -22,7 +22,7 @@ namespace WinRinglight.Tests
         [Fact]
         public void AchtStuecke_VierGeradeVierEcken()
         {
-            var pieces = RingBand.Pieces(W, H, 228, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), 228, 24, BandSide.Outward);
 
             Assert.Equal(8, pieces.Length);
             Assert.Equal(4, Array.FindAll(pieces, p => !p.IsCorner).Length);
@@ -34,7 +34,7 @@ namespace WinRinglight.Tests
         {
             // Das war Fehler 1: Der Saum begann bei der Kernmitte statt an der
             // Aussenkante und lag damit unter dem Kern.
-            var pieces = RingBand.Pieces(W, H, 228, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), 228, 24, BandSide.Outward);
 
             // Das obere Stueck liegt vollstaendig ueber dem Kern (y <= 0).
             var top = Array.Find(pieces, p => p.Kind == BandPieceKind.Top);
@@ -54,7 +54,7 @@ namespace WinRinglight.Tests
         [Fact]
         public void BandIstUeberallGleichBreit()
         {
-            var pieces = RingBand.Pieces(W, H, 228, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), 228, 24, BandSide.Outward);
 
             foreach (var p in pieces)
             {
@@ -70,7 +70,7 @@ namespace WinRinglight.Tests
         [Fact]
         public void EckenReichenBisInDieEcke()
         {
-            var pieces = RingBand.Pieces(W, H, 228, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), 228, 24, BandSide.Outward);
 
             var tl = Array.Find(pieces, p => p.Kind == BandPieceKind.TopLeft);
             Assert.Equal(-24, tl.Bounds.X, 3);
@@ -85,7 +85,7 @@ namespace WinRinglight.Tests
         public void EckenStueckeHabenIhrenMittelpunktAmRadius()
         {
             double r = 228;
-            var pieces = RingBand.Pieces(W, H, r, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), r, 24, BandSide.Outward);
 
             var tl = Array.Find(pieces, p => p.Kind == BandPieceKind.TopLeft);
             Assert.Equal(r, tl.ArcCenter.X, 3);
@@ -101,7 +101,7 @@ namespace WinRinglight.Tests
         {
             // Zwischen den beiden Ecken bleibt genau W - 2r bzw. H - 2r.
             double r = 228;
-            var pieces = RingBand.Pieces(W, H, r, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), r, 24, BandSide.Outward);
 
             var top = Array.Find(pieces, p => p.Kind == BandPieceKind.Top);
             Assert.Equal(W - 2 * r, top.Bounds.Width, 3);
@@ -111,7 +111,7 @@ namespace WinRinglight.Tests
         [Fact]
         public void KeinStueckIstLeer()
         {
-            var pieces = RingBand.Pieces(W, H, 228, 24);
+            var pieces = RingBand.Pieces(new Rect(0, 0, W, H), 228, 24, BandSide.Outward);
 
             foreach (var p in pieces)
             {
@@ -123,8 +123,8 @@ namespace WinRinglight.Tests
         [Fact]
         public void OhneGroesse_GibtEsKeineStuecke()
         {
-            Assert.Empty(RingBand.Pieces(0, 0, 0, 24));
-            Assert.Empty(RingBand.Pieces(W, H, 228, 0));
+            Assert.Empty(RingBand.Pieces(new Rect(0, 0, 0, 0), 0, 24, BandSide.Outward));
+            Assert.Empty(RingBand.Pieces(new Rect(0, 0, W, H), 228, 0, BandSide.Outward));
         }
 
         [Theory]
@@ -148,8 +148,7 @@ namespace WinRinglight.Tests
         [Fact]
         public void FertigeStuecke_HabenPinselUndGeometrie()
         {
-            var built = RingBand.Build(
-                System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 228, 24);
+            var built = RingBand.Build(System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 60, 228, 24);
 
             Assert.Equal(8, built.Count);
 
@@ -169,8 +168,7 @@ namespace WinRinglight.Tests
             // Fehler 2 war: an den Ecken ein gerades Rechteck. Ein Band mit
             // Radius muss dort eine RUNDE Begrenzung haben, also eine Geometrie
             // mit Bogen und nicht nur ein Rechteck.
-            var built = RingBand.Build(
-                System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 228, 24);
+            var built = RingBand.Build(System.Windows.Media.Color.FromRgb(255, 200, 140), 1.0, W, H, 60, 228, 24);
 
             var ecke = built.Find(p => p.Piece.Kind == BandPieceKind.TopLeft);
             Assert.NotNull(ecke);

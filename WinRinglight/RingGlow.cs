@@ -97,6 +97,59 @@ namespace WinRinglight
             return brush;
         }
 
+
+        /// <summary>
+        /// Fuellung fuer das Loch: was der fruehere Blur aus dem Kern heraus
+        /// in das Innere streute. Ueber die volle Lochbreite aufgetragen,
+        /// damit ein einzelner Verlauf von Kante zu Kante reicht.
+        /// </summary>
+        /// <param name="color">Farbe des Rings.</param>
+        /// <param name="opacity">Deckkraft des Saums.</param>
+        /// <param name="width">Lochbreite.</param>
+        /// <param name="height">Lochhoehe.</param>
+        /// <param name="band">Breite des Saums.</param>
+        public static Brush CoreInside(Color color, double opacity,
+            double width, double height, double band)
+        {
+            if (width <= 0 || height <= 0) return Brushes.Transparent;
+
+            var brush = new RadialGradientBrush
+            {
+                MappingMode = BrushMappingMode.RelativeToBoundingBox,
+                Center = new Point(0.5, 0.5),
+                GradientOrigin = new Point(0.5, 0.5),
+                RadiusX = 0.5,
+                RadiusY = 0.5,
+                SpreadMethod = GradientSpreadMethod.Pad,
+            };
+
+            double halfMin = Math.Min(width, height) / 2.0;
+            double loch = Math.Max(0.01, Math.Min(1.0, band / halfMin));
+
+            // Ab hier ist das Loch voll mit Ringlicht (fast deckend) - das ist
+            // der Anteil, den der Blur nicht erreichte.
+            double o = opacity;
+            if (o < 0) o = 0;
+            if (o > 1) o = 1;
+
+            // Innen (nahe dem Rand) fast voll, zur Mitte hin auf 0.
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb((byte)Math.Round(0.99 * o * 255), color.R, color.G, color.B), 0.0));
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb((byte)Math.Round(0.98 * o * 255), color.R, color.G, color.B), 1.0 - 4 * loch));
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb((byte)Math.Round(0.91 * o * 255), color.R, color.G, color.B), 1.0 - 3 * loch));
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb((byte)Math.Round(0.72 * o * 255), color.R, color.G, color.B), 1.0 - 2 * loch));
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb((byte)Math.Round(0.50 * o * 255), color.R, color.G, color.B), 1.0 - loch));
+            brush.GradientStops.Add(new GradientStop(
+                Color.FromArgb(0, color.R, color.G, color.B), 1.0));
+
+            brush.Freeze();
+            return brush;
+        }
+
         /// <summary>
         /// Wie weit der Glow nach innen reicht, in DIP, bei gegebener Ringdicke.
         /// Das ist die Breite, die der Verlauf braucht.

@@ -76,6 +76,42 @@ namespace GlowPreview
 
         private static string Path2(string a, string b) => System.IO.Path.Combine(a, b);
 
+        /// <summary>Ringpfad mit EvenOdd - dieselbe Logik wie MainWindow.CoreRingGeometry.</summary>
+        private static Geometry CoreRing(double w, double h, double t, double r)
+        {
+            var fig = new PathFigure { IsClosed = true, IsFilled = true };
+            AddRect(fig, 0, 0, w, h, r);
+            double iw = Math.Max(0.01, w - 2 * t);
+            double ih = Math.Max(0.01, h - 2 * t);
+            AddRect(fig, t, t, iw, ih, Math.Max(0, Math.Min(r - t, Math.Min(iw, ih) / 2)));
+
+            var g = new PathGeometry { FillRule = FillRule.EvenOdd };
+            g.Figures.Add(fig);
+            g.Freeze();
+            return g;
+        }
+
+        private static void AddRect(PathFigure fig, double x, double y, double w, double h, double r)
+        {
+            r = Math.Max(0, Math.Min(r, Math.Min(w, h) / 2));
+            if (r <= 0.01)
+            {
+                fig.Segments.Add(new LineSegment(new Point(x, y), true));
+                fig.Segments.Add(new LineSegment(new Point(x + w, y), true));
+                fig.Segments.Add(new LineSegment(new Point(x + w, y + h), true));
+                fig.Segments.Add(new LineSegment(new Point(x, y + h), true));
+                return;
+            }
+            fig.Segments.Add(new LineSegment(new Point(x + r, y), true));
+            fig.Segments.Add(new ArcSegment(new Point(x + w, y + r), new Size(r, r), 0, false, SweepDirection.Clockwise, true));
+            fig.Segments.Add(new LineSegment(new Point(x + w, y + h - r), true));
+            fig.Segments.Add(new ArcSegment(new Point(x + w - r, y + h), new Size(r, r), 0, false, SweepDirection.Clockwise, true));
+            fig.Segments.Add(new LineSegment(new Point(x + r, y + h), true));
+            fig.Segments.Add(new ArcSegment(new Point(x, y + h - r), new Size(r, r), 0, false, SweepDirection.Clockwise, true));
+            fig.Segments.Add(new LineSegment(new Point(x, y + r), true));
+            fig.Segments.Add(new ArcSegment(new Point(x + r, y), new Size(r, r), 0, false, SweepDirection.Clockwise, true));
+        }
+
         /// <summary>
         /// Baut den Saum genau wie MainWindow (gleiche Masse, gleicher Aufbau)
         /// und rastert ihn.
@@ -102,7 +138,7 @@ namespace GlowPreview
             Color color = Color.FromRgb(255, 214, 170);
 
             List<RingBand.PieceVisual> pieces =
-                RingBand.Build(color, 1.0, coreW, coreH, radius, band, pad, pad);
+                RingBand.Build(color, Opacity, coreW, coreH, Thickness, radius, band, pad, pad);
 
             foreach (RingBand.PieceVisual piece in pieces)
             {
@@ -114,19 +150,23 @@ namespace GlowPreview
                 });
             }
 
-            // Kern als Rahmen, damit das Bild dem echten Fenster entspricht.
-            var core = new Border
+            // Grundflaeche des Lochs: was der fruehere Blur hineinstreute.
+            canvas.Children.Add(new Path
             {
-                Width = coreW,
-                Height = coreH,
-                BorderThickness = new Thickness(Thickness),
-                BorderBrush = new SolidColorBrush(color),
-                CornerRadius = new CornerRadius(radius),
+                Data = new RectangleGeometry(new Rect(pad + Thickness, pad + Thickness,
+                    Math.Max(0.01, coreW - 2 * Thickness), Math.Max(0.01, coreH - 2 * Thickness))),
+                Fill = RingGlow.CoreInside(color, Opacity,
+                    Math.Max(0.01, coreW - 2 * Thickness), Math.Max(0.01, coreH - 2 * Thickness), band),
                 IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(core, pad);
-            Canvas.SetTop(core, pad);
-            canvas.Children.Add(core);
+            });
+
+            // Kern als Ringpfad - dieselbe Konstruktion wie in MainWindow.
+            canvas.Children.Add(new Path
+            {
+                Data = CoreRing(coreW, coreH, Thickness, radius),
+                Fill = new SolidColorBrush(color),
+                IsHitTestVisible = false,
+            });
 
             canvas.Measure(new Size(canvasW, canvasH));
             canvas.Arrange(new Rect(0, 0, canvasW, canvasH));
