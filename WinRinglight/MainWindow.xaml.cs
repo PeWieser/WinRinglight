@@ -159,8 +159,8 @@ namespace WinRinglight
 
             _cursorTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-                // Limit mask redraws to roughly 30 per second while keeping the cursor responsive.
-                Interval = TimeSpan.FromMilliseconds(33)
+                // Target roughly 60 cursor updates per second.
+                Interval = TimeSpan.FromMilliseconds(16)
             };
             _cursorTimer.Tick += UpdateCursorCutout;
 
@@ -631,22 +631,14 @@ namespace WinRinglight
 
         private void AddRinglight(double x, double y, double w, double h)
         {
-            System.Windows.Controls.Border glowBorder = new System.Windows.Controls.Border
+            System.Windows.Controls.Border glowBorder = new GlowBorder
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
                 Margin = new Thickness(x, y, 0, 0),
                 Width = w,
                 Height = h,
-                Opacity = 0.55,
-
-                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false, RenderAtScale = 0.25 },
-
-                Effect = new System.Windows.Media.Effects.BlurEffect
-                {
-                    Radius = 15,
-                    RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
-                }
+                Opacity = 0.55
             };
             glowBorder.Tag = new Rect(x, y, w, h);
             _activeBorders.Add(glowBorder);

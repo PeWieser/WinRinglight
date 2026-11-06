@@ -18,6 +18,8 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build WPF app
         run: dotnet build WinRinglight/WinRinglight.csproj --configuration Release
+      - name: Check glow geometry on Windows
+        run: dotnet run --project tools/GlowCheck/GlowCheck.csproj --configuration Release
       - name: Publish portable x64 app
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/win-x64
       - name: Upload Windows test version
