@@ -74,7 +74,7 @@ jobs:
 
       - name: Layout-Report erzeugen
         id: report
-        if: always() && steps.build.outputs.build_exit -eq '0'
+        if: always() && steps.build.outputs.build_exit == '0'
         shell: pwsh
         run: |
           $out = "report.md"
