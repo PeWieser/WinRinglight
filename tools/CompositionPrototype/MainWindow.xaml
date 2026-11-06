@@ -1,0 +1,16 @@
+<Window x:Class="CompositionPrototype.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WinRinglight – Composition-Prototyp" Width="490" SizeToContent="Height" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Background="#202620" Foreground="#f1f2ea">
+  <StackPanel Margin="24">
+    <TextBlock Text="Composition-Prototyp" FontSize="22" FontWeight="SemiBold"/>
+    <TextBlock Margin="0,8,0,16" TextWrapping="Wrap" Text="Eigenständiger Test: nur Hauptmonitor, 60 Hz Zielrate. Keine Einstellungen der normalen App werden verändert. Bitte die normale WinRinglight-Version vorher beenden."/>
+    <TextBlock Text="Ringdicke" FontWeight="SemiBold"/>
+    <Slider x:Name="ThicknessSlider" Minimum="54" Maximum="162" Value="60" TickFrequency="1" IsSnapToTickEnabled="True" ValueChanged="SettingsChanged"/>
+    <TextBlock x:Name="ThicknessLabel" Margin="0,0,0,8"/>
+    <CheckBox x:Name="Rounded" IsChecked="True" Foreground="White" Content="Abgerundete Form" Margin="0,0,0,8" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
+    <CheckBox x:Name="CaptureExcluded" Foreground="White" Content="Aufnahme-Ausschluss testen" Margin="0,0,0,16" Checked="CaptureChanged" Unchecked="CaptureChanged"/>
+    <StackPanel Orientation="Horizontal">
+      <Button x:Name="ToggleButton" Content="Overlay starten" Width="150" Padding="8" Click="Toggle_Click"/>
+      <Button Content="Beenden" Width="100" Padding="8" Margin="10,0,0,0" Click="Exit_Click"/>
+    </StackPanel>
+    <TextBlock x:Name="Status" Text="Bereit. Das Overlay wird über dieses Fenster beendet." TextWrapping="Wrap" Foreground="#BFD8B9" Margin="0,16,0,0"/>
+  </StackPanel>
+</Window>

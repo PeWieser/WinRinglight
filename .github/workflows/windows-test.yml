@@ -28,3 +28,20 @@ jobs:
           name: WinRinglight-test-win-x64
           path: publish/win-x64/
           if-no-files-found: error
+
+  composition-prototype:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Composition prototype
+        run: dotnet build tools/CompositionPrototype/CompositionPrototype.csproj --configuration Release
+      - name: Publish Composition prototype
+        run: dotnet publish tools/CompositionPrototype/CompositionPrototype.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/composition-win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WinRinglight-Composition-Prototype-win-x64
+          path: publish/composition-win-x64/
+          if-no-files-found: error
