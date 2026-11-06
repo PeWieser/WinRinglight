@@ -594,6 +594,10 @@ namespace WinRinglight
         private readonly System.Collections.Generic.List<System.Windows.Controls.Canvas> _glowPanels
             = new System.Collections.Generic.List<System.Windows.Controls.Canvas>();
 
+        // Fuer welchen Zustand wurde der Glow zuletzt gebaut?
+        private readonly System.Collections.Generic.List<GlowState?> _glowStates
+            = new System.Collections.Generic.List<GlowState?>();
+
         /// <summary>
         /// Alle Monitore als reine Daten (physische Pixel), damit die Layout-Rechnung
         /// ohne UI und ohne WinForms-Abhaengigkeit getestet werden kann.
@@ -679,6 +683,7 @@ namespace WinRinglight
             {
                 _coreBorders.Clear();
                 _glowPanels.Clear();
+                _glowStates.Clear();
                 MainGrid.Children.Clear();
 
                 foreach (var r in layout.Rings)
@@ -708,10 +713,8 @@ namespace WinRinglight
 
                     // Der Glow wird NICHT animiert und NICHT bei jeder
                     // Positionsänderung neu gebaut - nur wenn sich etwas
-                    // Sichtbares ändert (Größe/Dicke/Farbe).
-                    RebuildGlow(glow, rect, Config.Current.Thickness,
-                        KelvinToColor(Config.Current.Temperature));
-
+                    // Sichtbares ändert (Größe/Dicke/Farbe). Die Pruefung
+                    // steckt in ApplySettingsLive weiter unten.
                     AnimateBorderToRect(core, rect, isApple);
                 }
             }
@@ -883,12 +886,20 @@ namespace WinRinglight
             }
 
             // Der Glow braucht bei jeder Aenderung von Farbe oder Dicke
-            // neue Verlaeufe - aber nur dann, nicht pro Frame.
-            for (int i = 0; i < _glowPanels.Count; i++)
+            // neue Verlaeufe - aber nur dann. Nicht pro Frame und nicht pro
+            // Mausbewegung, sonst entsteht genau das Ruckeln, das vermieden
+            // werden soll.
+            for (int i = 0; i < _glowPanels.Count && i < _coreBorders.Count; i++)
             {
-                if (i < _coreBorders.Count)
+                var rect = (Rect)_coreBorders[i].Tag;
+                var state = new GlowState(rect.Width, rect.Height, thickness, kelvin);
+                var last = _glowStates.Count > i ? _glowStates[i] : null;
+
+                if (GlowRebuildPolicy.NeedsRebuild(last, state))
                 {
-                    RebuildGlow(_glowPanels[i], (Rect)_coreBorders[i].Tag, thickness, lightColor);
+                    RebuildGlow(_glowPanels[i], rect, thickness, lightColor);
+                    while (_glowStates.Count <= i) _glowStates.Add(null);
+                    _glowStates[i] = state;
                 }
             }
 

@@ -115,4 +115,48 @@ namespace WinRinglight
             return Math.Max(6.0, sigma * 3.0);
         }
     }
+
+    /// <summary>
+    /// Merkt sich, wofuer der Glow zuletzt gebaut wurde. Damit laesst sich
+    /// verhindern, dass er bei jeder Mausbewegung neu entsteht - das waere
+    /// genau das Ruckeln, das vermieden werden soll.
+    /// </summary>
+    public sealed class GlowState
+    {
+        public GlowState(double width, double height, double thickness, double kelvin)
+        {
+            Width = width;
+            Height = height;
+            Thickness = thickness;
+            Kelvin = kelvin;
+        }
+
+        public double Width { get; }
+        public double Height { get; }
+        public double Thickness { get; }
+        public double Kelvin { get; }
+    }
+
+    public static class GlowRebuildPolicy
+    {
+        /// <summary>Ab dieser Kelvin-Differenz ist die Aenderung sichtbar.</summary>
+        public const double KelvinTolerance = 50.0;
+
+        /// <summary>Ab dieser Groessendifferenz in DIP lohnt sich ein Neubau.</summary>
+        public const double SizeTolerance = 1.0;
+
+        public static bool NeedsRebuild(GlowState? last, GlowState now)
+        {
+            if (now == null) return false;
+            if (last == null) return true;
+
+            if (System.Math.Abs(now.Width - last.Width) > SizeTolerance) return true;
+            if (System.Math.Abs(now.Height - last.Height) > SizeTolerance) return true;
+            if (System.Math.Abs(now.Thickness - last.Thickness) > SizeTolerance) return true;
+            if (System.Math.Abs(now.Kelvin - last.Kelvin) > KelvinTolerance) return true;
+
+            return false;
+        }
+    }
+
 }
