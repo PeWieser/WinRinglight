@@ -91,6 +91,24 @@ es 18 % teurer.
 **Warum es flüssig bleibt:** Der Glow hängt an Größe/Dicke/Farbe, nicht an der
 Mausposition. `GlowRebuildPolicy` verhindert den Neubau bei Bewegung (7 Tests).
 
+## Phase 3.5 – Glow wiederhergestellt  ← **✅ erledigt** (`123add5`, 91 Tests)
+
+Der Umbau in Phase 3 hatte den Saum **nach innen** gelegt. Sichtbar wurde das
+erst im Apple-Stil: Glow weg, an den runden Ecken eckige Leuchtstreifen.
+
+| | Aufgabe | Status |
+|---|---|---|
+| 3.5.1 | Band liegt aussen statt innen | ✅ `RingBand` |
+| 3.5.2 | Kontur folgt dem Kern (rund) | ✅ `Exclude`-Geometrie |
+| 3.5.3 | Nahtlos, ohne Ueberlappung | ✅ 8 Stuecke, Abdeckungstest |
+| 3.5.4 | Stilwechsel baut Saum neu | ✅ `_glowStates[i] = null` |
+| 3.5.5 | Versatz Apple-Innenabstand | ✅ `inset = 20` |
+| 3.5.6 | Abbildungen zur Kontrolle | ✅ `docs/agent/glow-*.png` |
+
+**Squircle:** WPF kann Superellipsen nicht als `CornerRadius`. Mit der neuen
+Band-Konstruktion ist ein Squircle-Pfad moeglich, aber nur mit Geometrie statt
+`Border` - eigenes Thema, erst nach Abnahme der jetzigen Optik.
+
 ## Phase 4 – Nur rechnen, wenn sich etwas bewegt  ← **✅ erledigt**
 
 | | Aufgabe | Status |
