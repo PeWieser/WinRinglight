@@ -218,20 +218,35 @@ namespace WinRinglight.Tests
 
                     drin++;
 
-                    // In wie vielen Stuecken liegt er?
-                    int treffer = 0;
+                    // Wichtig: mit Toleranz pruefen. Die Stuecke stossen an den
+                    // Nahtstellen exakt aneinander - ein Punkt genau auf der
+                    // Naht liegt geometrisch in keinem oder in beiden. Das ist
+                    // keine Luecke und keine Ueberlappung, sondern die Naht.
+                    //
+                    // Echte Luecke   = Punkt liegt auch mit EPS daneben nirgends.
+                    // Echte Ueberlappung = Punkt liegt mit -EPS in zwei Stuecken.
+                    const double EPS = 0.01;
+
+                    int aussen = 0, innen = 0;
                     foreach (var p in pieces)
                     {
-                        if (p.Bounds.Contains(new Point(x, y))) treffer++;
+                        if (Enthaelt(p.Bounds, x, y, EPS)) aussen++;
+                        if (Enthaelt(p.Bounds, x, y, -EPS)) innen++;
                     }
 
-                    if (treffer == 0) daneben++;
-                    if (treffer > 1) daneben++;   // Ueberlappung
+                    if (aussen == 0) daneben++;      // Luecke
+                    if (innen > 1) daneben++;        // Ueberlappung (heller Streifen)
                 }
             }
 
             Assert.True(drin > 100, $"Zu wenige Testpunkte ({drin}) - Test misst nichts");
             Assert.Equal(0, daneben);
+        }
+
+        private static bool Enthaelt(Rect r, double x, double y, double eps)
+        {
+            return x >= r.X - eps && x <= r.Right + eps &&
+                   y >= r.Y - eps && y <= r.Bottom + eps;
         }
 
         /// <summary>
