@@ -132,6 +132,8 @@ namespace WinRinglight
         // Drosselt, wie oft das Loch um die Maus tatsaechlich neu gezeichnet wird.
         private readonly CursorThrottle _throttle = new CursorThrottle();
         private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+        private long _lastWalkMs;
+        private bool _fullscreenTimerRunning;
 
         private Win32Point _mousePt = new Win32Point();
 
@@ -245,7 +247,7 @@ namespace WinRinglight
             _webcamTimer?.Start();
 
             ApplyCaptureAffinity();
-            _fullscreenTimer?.Start();
+            UpdateFullscreenTimerState();
 
             FlushMemory();
         }
@@ -321,6 +323,11 @@ namespace WinRinglight
             // nicht erst beim naechsten Mauszucken.
             _throttle.Reset();
 
+            // Den Vollbild-Timer nur laufen lassen, wenn er etwas bewirken kann:
+            // aus + keine Webcam-Automatik = niemand kann das Ringlicht einschalten,
+            // ausser dem Hotkey (der kommt als Windows-Nachricht, nicht per Timer).
+            UpdateFullscreenTimerState();
+
             DoubleAnimation fadeAnimation = new DoubleAnimation
             {
                 To = _isRinglightOn ? 1.0 : 0.0,
@@ -356,11 +363,51 @@ namespace WinRinglight
             SetWindowDisplayAffinity(hwnd, affinity);
         }
 
+        /// <summary>
+        /// Startet oder stoppt den Vollbild-Timer je nach Zustand.
+        /// Ohne Ringlicht und ohne Webcam-Automatik hat der Timer keine Aufgabe.
+        /// </summary>
+        private void UpdateFullscreenTimerState()
+        {
+            if (_fullscreenTimer == null) return;
+
+            bool shouldRun = IdlePolicy.ShouldRunTimer(_isRinglightOn, Config.Current.AutoWebcam);
+            if (shouldRun && !_fullscreenTimerRunning)
+            {
+                _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(IdlePolicy.IntervalFor(_isRinglightOn));
+                _fullscreenTimer.Start();
+                _fullscreenTimerRunning = true;
+            }
+            else if (!shouldRun && _fullscreenTimerRunning)
+            {
+                _fullscreenTimer.Stop();
+                _fullscreenTimerRunning = false;
+            }
+            else if (shouldRun)
+            {
+                _fullscreenTimer.Interval = TimeSpan.FromMilliseconds(IdlePolicy.IntervalFor(_isRinglightOn));
+            }
+        }
+
         private void FullscreenTimer_Tick(object? sender, EventArgs e)
         {
             if (!_isRinglightOn) return;
 
-            bool isFullscreenNow = false;
+            // Der teure Teil ist der Z-Order-Walk (DwmGetWindowAttribute pro
+            // Fenster, also prozessuebergreifend). Bei 50-ms-Ticks lief er
+            // 20x/s. Er wird jetzt hoechstens 1x/s gemacht; dazwischen ist der
+            // Tick ein reiner Vergleich und kostet nichts.
+            bool doWalk = IdlePolicy.ShouldWalk(_clock.ElapsedMilliseconds, _lastWalkMs);
+            if (doWalk) _lastWalkMs = _clock.ElapsedMilliseconds;
+
+            // Zustand vom letzten Walk uebernehmen; nur ein echter Walk
+            // darf ihn ueberschreiben (sonst wuerde jeder uebersprungene
+            // Tick das Ringlicht faelschlich auf "kein Vollbild" setzen).
+            bool isFullscreenNow = _isFullscreenActive;
+
+            if (doWalk)
+            {
+            isFullscreenNow = false;
             IntPtr currentHwnd = GetTopWindow(IntPtr.Zero);
 
             // Eigene Prozess-ID
@@ -423,6 +470,8 @@ namespace WinRinglight
                 }
                 currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
             }
+
+            }   // Ende: nur wenn doWalk
 
             // --- STUFE 2: DER STARTMENÜ-OVERRIDE (Deine Beobachtung!) ---
             // Wir prüfen das Fenster, in dem der Cursor gerade blinkt.
