@@ -159,7 +159,9 @@ namespace WinRinglight
             double width,
             double height,
             double cornerRadius,
-            double band)
+            double band,
+            double offsetX = 0,
+            double offsetY = 0)
         {
             var result = new List<PieceVisual>(8);
             BandPiece[] pieces = Pieces(width, height, cornerRadius, band);
@@ -179,6 +181,18 @@ namespace WinRinglight
             {
                 var clip = new RectangleGeometry(piece.Bounds);
                 var geometry = new CombinedGeometry(GeometryCombineMode.Intersect, fullBand, clip);
+
+                // Versatz ins Zielkoordinatensystem. Damit liegen alle
+                // Koordinaten im positiven Bereich - ein Path mit rein
+                // negativen Koordinaten wird von WPF nicht zuverlaessig
+                // gezeichnet.
+                if (offsetX != 0 || offsetY != 0)
+                {
+                    var shift = new TranslateTransform(offsetX, offsetY);
+                    shift.Freeze();
+                    geometry.Transform = shift;
+                }
+
                 geometry.Freeze();
 
                 Brush brush = piece.IsCorner

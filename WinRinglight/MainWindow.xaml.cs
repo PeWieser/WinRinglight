@@ -985,18 +985,15 @@ namespace WinRinglight
             if (band <= 0 || coreW <= 0 || coreH <= 0) return;
 
             double radius = RingBand.CoreCornerRadius(coreW, coreH, isAppleStyle);
-            var pieces = RingBand.Build(color, 1.0, coreW, coreH, radius, band);
-
-            if (pieces.Count == 0) return;
 
             // Der Kern ist im Apple-Stil um 20 DIP eingerueckt - der Saum muss
             // diesen Versatz mitmachen, sonst liegt er neben dem Kern.
             double inset = isAppleStyle ? 20.0 : 0.0;
             double pad = RinglightGlowPad + inset;
+            double offX = pad, offY = pad;
+            var pieces = RingBand.Build(color, 1.0, coreW, coreH, radius, band, offX, offY);
 
-            System.Windows.Media.TranslateTransform shift =
-                new System.Windows.Media.TranslateTransform(pad, pad);
-            shift.Freeze();
+            if (pieces.Count == 0) return;
 
             foreach (var piece in pieces)
             {
@@ -1005,9 +1002,9 @@ namespace WinRinglight
                     Data = piece.Geometry,
                     Fill = piece.Brush,
                     IsHitTestVisible = false,
-                    RenderTransform = shift,
                 };
 
+                // Der Versatz steckt schon in der Geometrie (siehe RingBand.Build).
                 glow.Children.Add(path);
             }
         }

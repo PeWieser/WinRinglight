@@ -178,4 +178,94 @@ namespace WinRinglight.Tests
             Assert.True(ecke.Geometry.Bounds.Height > 10, "Ecke ist zu klein");
         }
     }
+
+    /// <summary>
+    /// Der eigentliche Beweis: Das Band muss die Flaeche zwischen Kern und
+    /// Aussenkontur VOLLSTAENDIG fuellen - ohne Luecke und ohne Ueberlappung.
+    ///
+    /// Eine Luecke waere ein sichtbarer Spalt, eine Ueberlappung ein hellerer
+    /// Streifen (zwei halbtransparente Flaechen uebereinander). Beides ist
+    /// genau die Art Fehler, die auf dem Bildschirm auffaellt.
+    /// </summary>
+    public class RingBandAbdeckungTests
+    {
+        private const double W = 800;
+        private const double H = 400;
+        private const double BAND = 24;
+
+        [Theory]
+        [InlineData(120.0)]   // Apple-artig
+        [InlineData(3.0)]     // eckig
+        [InlineData(0.0)]     // ganz ohne Rundung
+        public void BandIstLueckenlosUndUeberlapptNicht(double radius)
+        {
+            var pieces = RingBand.Pieces(W, H, radius, BAND);
+
+            // Punkte auf dem Band testen: Abstand zur Kernkontur zwischen 0 und BAND.
+            // Ein Punkt "gehoert zum Band", wenn er ausserhalb des Kerns liegt
+            // und hoechstens BAND von ihm entfernt ist.
+            int drin = 0, daneben = 0;
+
+            for (double x = -BAND; x <= W + BAND; x += 6.0)
+            {
+                for (double y = -BAND; y <= H + BAND; y += 6.0)
+                {
+                    // Liegt der Punkt im Band?
+                    double d = AbstandZurKontur(x, y, W, H, radius);
+
+                    bool imBand = d > 0.5 && d < BAND - 0.5;
+                    if (!imBand) continue;
+
+                    drin++;
+
+                    // In wie vielen Stuecken liegt er?
+                    int treffer = 0;
+                    foreach (var p in pieces)
+                    {
+                        if (p.Bounds.Contains(new Point(x, y))) treffer++;
+                    }
+
+                    if (treffer == 0) daneben++;
+                    if (treffer > 1) daneben++;   // Ueberlappung
+                }
+            }
+
+            Assert.True(drin > 100, $"Zu wenige Testpunkte ({drin}) - Test misst nichts");
+            Assert.Equal(0, daneben);
+        }
+
+        /// <summary>
+        /// Vorzeichenbehafteter Abstand zur Kernkontur: positiv = ausserhalb.
+        /// Fuer abgerundete Rechtecke: Abstand zur naechsten Kante bzw. zum
+        /// naechsten Eckmittelpunkt.
+        /// </summary>
+        private static double AbstandZurKontur(double x, double y, double w, double h, double r)
+        {
+            // Im Kern?
+            bool imKern = x > 0 && x < w && y > 0 && y < h;
+            if (r > 0)
+            {
+                // Ecken: ausserhalb des Viertelkreises?
+                double[] cx = { r, w - r, w - r, r };
+                double[] cy = { r, r, h - r, h - r };
+                for (int i = 0; i < 4; i++)
+                {
+                    bool inEckQuadrant = (cx[i] == r ? x < r : x > w - r) && (cy[i] == r ? y < r : y > h - r);
+                    if (!inEckQuadrant) continue;
+
+                    double dx = x - cx[i];
+                    double dy = y - cy[i];
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+                    return dist - r;
+                }
+            }
+
+            if (imKern) return -1;
+
+            // Abstand zur naechsten Rechteckkante
+            double aussen = Math.Max(Math.Max(-x, x - w), Math.Max(-y, y - h));
+            return aussen;
+        }
+    }
+
 }
