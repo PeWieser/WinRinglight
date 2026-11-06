@@ -112,6 +112,11 @@ namespace WinRinglight
 
         private DispatcherTimer? _webcamTimer;
         private DispatcherTimer? _cursorTimer;
+        private DispatcherTimer? _temperatureTimer;
+        private readonly System.Diagnostics.Stopwatch _temperatureClock = new();
+        private double _displayedTemperature;
+        private double _temperatureFrom;
+        private double _temperatureTarget;
         private System.Windows.Forms.NotifyIcon? _trayIcon;
 
         private bool _isRinglightOn = false;
@@ -164,6 +169,12 @@ namespace WinRinglight
             };
             _cursorTimer.Tick += UpdateCursorCutout;
 
+            _temperatureTimer = new DispatcherTimer(DispatcherPriority.Render)
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _temperatureTimer.Tick += TemperatureTimer_Tick;
+
             SetupTrayIcon();
         }
 
@@ -215,6 +226,7 @@ namespace WinRinglight
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
             _cursorTimer?.Stop();
+            _temperatureTimer?.Stop();
             _webcamTimer?.Stop();
             _fullscreenTimer?.Stop();
             _trayIcon?.Dispose();
@@ -324,6 +336,12 @@ namespace WinRinglight
             else
             {
                 _cursorTimer?.Stop();
+                // No need to keep animating a color while the light fades out.
+                if (_temperatureTimer?.IsEnabled == true)
+                {
+                    _temperatureTimer.Stop();
+                    ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
+                }
             }
 
             DoubleAnimation fadeAnimation = new DoubleAnimation
@@ -339,18 +357,51 @@ namespace WinRinglight
 
         private void WebcamTimer_Tick(object? sender, EventArgs e)
         {
-            if (!Config.Current.AutoWebcam) return;
-
-            bool isCameraOn = WebcamHelper.IsWebcamInUse();
-
-            if (isCameraOn != _lastWebcamState)
+            if (Config.Current.AutoWebcam)
             {
-                _lastWebcamState = isCameraOn;
-                SetRinglightState(isCameraOn);
+                bool isCameraOn = WebcamHelper.IsWebcamInUse();
+                if (isCameraOn != _lastWebcamState)
+                {
+                    _lastWebcamState = isCameraOn;
+                    SetRinglightState(isCameraOn);
+                }
             }
-            if (Config.Current.AutoTemperature && _isRinglightOn)
+
+            // Smart temperature is independent of webcam automation. Avoid
+            // interrupting a checkbox transition already in progress.
+            if (Config.Current.AutoTemperature && _isRinglightOn && _temperatureTimer?.IsEnabled != true)
             {
                 ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
+            }
+        }
+
+        public void TransitionTemperatureMode()
+        {
+            double target = Config.Current.AutoTemperature ? GetSmartTemperature() : Config.Current.Temperature;
+            if (!_isRinglightOn || _activeBorders.Count == 0)
+            {
+                _temperatureTimer?.Stop();
+                ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
+                return;
+            }
+
+            // Start from the currently displayed color, including when the user
+            // toggles again halfway through a previous transition.
+            _temperatureFrom = _displayedTemperature;
+            _temperatureTarget = target;
+            _temperatureClock.Restart();
+            _temperatureTimer?.Start();
+        }
+
+        private void TemperatureTimer_Tick(object? sender, EventArgs e)
+        {
+            double elapsed = _temperatureClock.Elapsed.TotalMilliseconds;
+            double temperature = TemperatureTransition.At(_temperatureFrom, _temperatureTarget, elapsed);
+            ApplyRingAppearance(Config.Current.Thickness, temperature);
+            if (elapsed >= TemperatureTransition.DurationMilliseconds)
+            {
+                _temperatureTimer?.Stop();
+                _temperatureClock.Stop();
             }
         }
 
@@ -667,6 +718,26 @@ namespace WinRinglight
                 kelvin = GetSmartTemperature();
             }
 
+            if (_temperatureTimer?.IsEnabled == true)
+            {
+                // Thickness or monitor changes should not interrupt a transition;
+                // a new manual slider value should take effect immediately.
+                if (!Config.Current.AutoTemperature && Math.Abs(kelvin - _temperatureTarget) > 0.01)
+                    _temperatureTimer.Stop();
+                else
+                    kelvin = _displayedTemperature;
+            }
+            ApplyRingAppearance(thickness, kelvin);
+
+            double baseH = SystemParameters.PrimaryScreenHeight;
+            CursorCutoutMask.RadiusX = baseH * Config.CursorCutoutRadiusPercent;
+            CursorCutoutMask.RadiusY = baseH * Config.CursorCutoutRadiusPercent;
+            StopMiddle.Offset = Math.Clamp(1.0 - Config.CursorBlurRadiusPercent, 0.01, 0.99);
+        }
+
+        private void ApplyRingAppearance(double thickness, double kelvin)
+        {
+            _displayedTemperature = kelvin;
             foreach (var border in _activeBorders)
             {
                 border.BorderThickness = new Thickness(thickness);
@@ -691,10 +762,6 @@ namespace WinRinglight
                 }
             }
 
-            double baseH = SystemParameters.PrimaryScreenHeight;
-            CursorCutoutMask.RadiusX = baseH * Config.CursorCutoutRadiusPercent;
-            CursorCutoutMask.RadiusY = baseH * Config.CursorCutoutRadiusPercent;
-            StopMiddle.Offset = Math.Clamp(1.0 - Config.CursorBlurRadiusPercent, 0.01, 0.99);
         }
     }
 }

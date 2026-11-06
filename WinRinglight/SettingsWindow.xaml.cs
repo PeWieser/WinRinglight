@@ -145,7 +145,7 @@ namespace WinRinglight
 
             SliderTemperature.IsEnabled = !Config.Current.AutoTemperature;
 
-            _mainWindow.ApplySettingsLive(1.0, Config.Current.Thickness, Config.Current.Temperature);
+            _mainWindow.TransitionTemperatureMode();
             Config.Save();
         }
 

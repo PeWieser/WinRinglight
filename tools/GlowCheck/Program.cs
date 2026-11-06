@@ -9,6 +9,12 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        if (TemperatureTransition.At(2000, 6000, 0) != 2000 ||
+            TemperatureTransition.At(2000, 6000, 250) != 4000 ||
+            TemperatureTransition.At(2000, 6000, 600) != 6000 ||
+            TemperatureTransition.At(6000, 2000, -1) != 6000 ||
+            TemperatureTransition.At(6000, 2000, 500) != 2000)
+            throw new Exception("Temperature transition interpolation failed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {
             var halo = new GlowBorder { Width = 320, Height = 200,
