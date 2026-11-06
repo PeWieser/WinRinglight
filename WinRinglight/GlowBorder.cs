@@ -21,7 +21,9 @@ namespace WinRinglight
 
             double half = thickness / 2;
             var rect = new Rect(half, half, width - thickness, height - thickness);
-            double radius = Math.Max(0, CornerRadius.TopLeft - half);
+            // WPF Border.OnRender uses CornerRadius directly on the inset
+            // centerline, not CornerRadius minus half the stroke thickness.
+            double radius = Math.Max(0, CornerRadius.TopLeft);
             radius = Math.Min(radius, Math.Min(rect.Width, rect.Height) / 2);
             double blurRadius = Math.Min(40, thickness * 0.4);
             // Layer opacity is intentionally low; these contours are underneath

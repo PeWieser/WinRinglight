@@ -25,6 +25,24 @@ internal static class Program
             Console.WriteLine($"radius={radius}, center={Alpha(160, 100)}, ring={Alpha(160, 15)}, inside-glow={Alpha(160, 34)}");
             if (Alpha(160, 100) != 0 || Alpha(160, 15) == 0 || Alpha(160, 34) == 0)
                 throw new Exception("Glow rendered unexpectedly: check center, ring and inner glow.");
+            if (radius == 55.0)
+            {
+                // Border uses this same centerline radius. Sample just inside
+                // the ring's inner edge along the whole top-left quarter arc.
+                double center = 15 + radius;
+                double innerRadius = radius - 15;
+                byte straight = Alpha(160, 33);
+                for (int degrees = 10; degrees <= 80; degrees += 10)
+                {
+                    double angle = degrees * Math.PI / 180;
+                    int x = (int)Math.Round(center - (innerRadius - 3) * Math.Cos(angle));
+                    int y = (int)Math.Round(center - (innerRadius - 3) * Math.Sin(angle));
+                    byte curved = Alpha(x, y);
+                    Console.WriteLine($"inner arc {degrees}°: {curved}, straight: {straight}");
+                    if (curved < straight * 0.45 || curved > straight * 1.8)
+                        throw new Exception("Inner corner glow diverges from straight edge.");
+                }
+            }
         }
         Console.WriteLine("Glow geometry checks passed; this is not a visual or GPU performance test.");
         return 0;
