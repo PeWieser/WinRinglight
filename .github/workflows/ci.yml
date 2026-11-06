@@ -84,13 +84,30 @@ jobs:
           $md += "| Build (`WinRinglight.csproj`) | $buildIcon | exit=$b, Fehler=$e, Warnungen=$w |"
           $md += "| Tests (`ScreenLayoutTests`) | $testIcon | exit=$t, bestanden=$p, fehlgeschlagen=$f |"
           $md += ""
+
+          # Diagnose direkt in den Kommentar, weil Artifact-Downloads aus der
+          # Sandbox nicht erreichbar sind.
+          if (Test-Path "test.log") {
+            $fail = Select-String -Path test.log -Pattern '(error|Failed |Error Message|Assert\.|Stack Trace|Exception)' -Context 0,2 |
+                    Select-Object -First 40 | ForEach-Object { $_.Line }
+            if ($fail) {
+              $md += "<details><summary>Test-Fehler (Auszug)</summary>"
+              $md += ""
+              $md += '```'
+              $md += $fail
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+          }
+
           $md += "Commit: ``${{ github.sha }}``"
           $md += "Branch: ``${{ github.ref_name }}``"
           $md += "Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           $md | Out-File -FilePath result.md -Encoding utf8
 
       - name: Kommentar in den Pull Request schreiben
-        if: always() && github.event_name == 'push'
+        if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
