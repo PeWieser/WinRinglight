@@ -19,6 +19,7 @@
     <Compile Include="..\WinRinglight\ScreenLayout.cs" Link="ScreenLayout.cs" />
     <Compile Include="..\WinRinglight\CursorThrottle.cs" Link="CursorThrottle.cs" />
     <Compile Include="..\WinRinglight\IdlePolicy.cs" Link="IdlePolicy.cs" />
+    <Compile Include="..\WinRinglight\RingGlow.cs" Link="RingGlow.cs" />
   </ItemGroup>
 
 </Project>

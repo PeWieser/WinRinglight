@@ -567,7 +567,7 @@ namespace WinRinglight
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
-            foreach (var border in _activeBorders)
+            foreach (var border in _coreBorders)
             {
                 Rect baseRect = (Rect)border.Tag;
 
@@ -585,7 +585,14 @@ namespace WinRinglight
             }
         }
 
-        private System.Collections.Generic.List<System.Windows.Controls.Border> _activeBorders = new System.Collections.Generic.List<System.Windows.Controls.Border>();
+        // Der Kern ist eine Border (dicker Rahmen). Der Glow besteht aus vier
+        // Verlaufsflaechen und ist deshalb ein Canvas - ein BorderBrush kann nur
+        // eine Richtung. Beide Listen laufen parallel.
+        private readonly System.Collections.Generic.List<System.Windows.Controls.Border> _coreBorders
+            = new System.Collections.Generic.List<System.Windows.Controls.Border>();
+
+        private readonly System.Collections.Generic.List<System.Windows.Controls.Canvas> _glowPanels
+            = new System.Collections.Generic.List<System.Windows.Controls.Canvas>();
 
         /// <summary>
         /// Alle Monitore als reine Daten (physische Pixel), damit die Layout-Rechnung
@@ -668,9 +675,10 @@ namespace WinRinglight
             // deshalb ueber die HwndSource, nicht ueber Left/Top/Width/Height in DIP).
             ApplyWindowRect(layout.WindowPixels);
 
-            if (_activeBorders.Count != layout.Rings.Count * 2)
+            if (_coreBorders.Count != layout.Rings.Count)
             {
-                _activeBorders.Clear();
+                _coreBorders.Clear();
+                _glowPanels.Clear();
                 MainGrid.Children.Clear();
 
                 foreach (var r in layout.Rings)
@@ -688,14 +696,23 @@ namespace WinRinglight
                 for (int i = 0; i < layout.Rings.Count; i++)
                 {
                     var rect = layout.Rings[i];
-                    var glowBorder = _activeBorders[i * 2];
-                    var coreBorder = _activeBorders[i * 2 + 1];
 
-                    glowBorder.Tag = rect;
-                    coreBorder.Tag = rect;
+                    var glow = _glowPanels[i];
+                    glow.Width = rect.Width;
+                    glow.Height = rect.Height;
+                    glow.Margin = new Thickness(rect.X, rect.Y, 0, 0);
+                    glow.Tag = rect;
 
-                    AnimateBorderToRect(glowBorder, rect, isApple);
-                    AnimateBorderToRect(coreBorder, rect, isApple);
+                    var core = _coreBorders[i];
+                    core.Tag = rect;
+
+                    // Der Glow wird NICHT animiert und NICHT bei jeder
+                    // Positionsänderung neu gebaut - nur wenn sich etwas
+                    // Sichtbares ändert (Größe/Dicke/Farbe).
+                    RebuildGlow(glow, rect, Config.Current.Thickness,
+                        KelvinToColor(Config.Current.Temperature));
+
+                    AnimateBorderToRect(core, rect, isApple);
                 }
             }
         }
@@ -739,26 +756,25 @@ namespace WinRinglight
 
         private void AddRinglight(double x, double y, double w, double h)
         {
-            System.Windows.Controls.Border glowBorder = new System.Windows.Controls.Border
+            // Der weiche Rand ist ein Farbverlauf, kein BlurEffect.
+            // Ein BlurEffect wirkt auf die Bounds (= ganzer Monitor) und kostete
+            // im Messlauf 16x so viel wie alles andere zusammen.
+            //
+            // Ein BorderBrush hat nur eine Richtung. Fuer die vier Kanten
+            // braucht es vier Flaechen, deshalb ein Canvas mit vier Rechtecken.
+            var glow = new Canvas
             {
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                Margin = new Thickness(x, y, 0, 0),
                 Width = w,
                 Height = h,
+                Margin = new Thickness(x, y, 0, 0),
                 Opacity = 0.55,
-
-                CacheMode = new BitmapCache { EnableClearType = false, SnapsToDevicePixels = false, RenderAtScale = 0.25 },
-
-                Effect = new System.Windows.Media.Effects.BlurEffect
-                {
-                    Radius = 15,
-                    RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
-                }
+                IsHitTestVisible = false,
             };
-            glowBorder.Tag = new Rect(x, y, w, h);
-            _activeBorders.Add(glowBorder);
-            MainGrid.Children.Add(glowBorder);
+            glow.Tag = new Rect(x, y, w, h);
+            _glowPanels.Add(glow);
+            MainGrid.Children.Add(glow);
 
             System.Windows.Controls.Border coreBorder = new System.Windows.Controls.Border
             {
@@ -772,8 +788,75 @@ namespace WinRinglight
             RenderOptions.SetEdgeMode(coreBorder, EdgeMode.Unspecified);
 
             coreBorder.Tag = new Rect(x, y, w, h);
-            _activeBorders.Add(coreBorder);
+            _coreBorders.Add(coreBorder);
             MainGrid.Children.Add(coreBorder);
+        }
+
+        /// <summary>
+        /// Baut die vier Verlaufsflaechen fuer den weichen Rand neu auf.
+        /// Wird nur bei Aenderungen von Groesse, Dicke oder Farbe aufgerufen -
+        /// NICHT bei Mausbewegungen.
+        /// </summary>
+        private void RebuildGlow(Canvas glow, Rect rect, double thickness, Color color)
+        {
+            glow.Children.Clear();
+
+            // Der Glow liegt AUSSERHALB des Kerns und laeuft nach aussen aus.
+            // Vorher kam er vom BlurEffect, der ueber die Kernkante hinaus
+            // unscharf wurde - deshalb beginnt der Verlauf an der Kernkante.
+            double band = RingGlow.WidthFor(thickness);
+            double edge = thickness;          // innere Kante = Kernkante
+            double outer = thickness + band;  // aussen, wo der Saum auf null geht
+
+            if (outer <= 0 || rect.Width <= 0 || rect.Height <= 0) return;
+
+            // Laenge des Verlaufs in relativen Einheiten ist immer 1; die
+            // Stuetzstellen verteilen sich auf die Bandbreite.
+            // Oben: von innen (deckend) nach aussen (transparent)
+            AddGlowStrip(glow, new Rect(edge, 0, System.Math.Max(0, rect.Width - 2 * edge), outer - edge), color,
+                new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+
+            // Unten
+            AddGlowStrip(glow, new Rect(edge, rect.Height - outer, System.Math.Max(0, rect.Width - 2 * edge), outer - edge), color,
+                new System.Windows.Point(0, 1), new System.Windows.Point(0, 0));
+
+            // Links
+            AddGlowStrip(glow, new Rect(0, edge, outer - edge, System.Math.Max(0, rect.Height - 2 * edge)), color,
+                new System.Windows.Point(0, 0), new System.Windows.Point(1, 0));
+
+            // Rechts
+            AddGlowStrip(glow, new Rect(rect.Width - outer, edge, outer - edge, System.Math.Max(0, rect.Height - 2 * edge)), color,
+                new System.Windows.Point(1, 0), new System.Windows.Point(0, 0));
+        }
+
+        private static void AddGlowStrip(Canvas parent, Rect area, Color color,
+            System.Windows.Point from, System.Windows.Point to)
+        {
+            if (area.Width <= 0.5 || area.Height <= 0.5) return;
+
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = area.Width,
+                Height = area.Height,
+                Fill = RingGlow.Create(color, 1.0, from, to),
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(rect, area.X);
+            Canvas.SetTop(rect, area.Y);
+            parent.Children.Add(rect);
+        }
+
+        /// <summary>
+        /// Kelvin -> Farbe. Ausgelagert, damit Einstellungen und Live-Update
+        /// dieselbe Rechnung benutzen.
+        /// </summary>
+        internal static System.Windows.Media.Color KelvinToColor(double kelvin)
+        {
+            double t = (kelvin - 2000) / 4500.0;
+            byte r = (byte)System.Math.Max(0, System.Math.Min(255, 255 - (20 * t)));
+            byte g = (byte)System.Math.Max(0, System.Math.Min(255, 170 + (75 * t)));
+            byte b = (byte)System.Math.Max(0, System.Math.Min(255, 50 + (205 * t)));
+            return System.Windows.Media.Color.FromRgb(r, g, b);
         }
 
         public void ApplySettingsLive(double brightness, double thickness, double kelvin)
@@ -783,27 +866,29 @@ namespace WinRinglight
                 kelvin = GetSmartTemperature();
             }
 
-            foreach (var border in _activeBorders)
+            System.Windows.Media.Color lightColor = KelvinToColor(kelvin);
+            var frozen = new SolidColorBrush(lightColor);
+            frozen.Freeze();
+
+            foreach (var border in _coreBorders)
             {
                 border.BorderThickness = new Thickness(thickness);
 
                 if (Config.Current.VisualStyleIndex != 0)
                 {
-                    //border.CornerRadius = new CornerRadius(Math.Max(1, thickness));
                     border.CornerRadius = new CornerRadius(3);
                 }
 
-                double t = (kelvin - 2000) / 4500.0;
-                byte r = (byte)(255 - (20 * t));
-                byte g = (byte)(170 + (75 * t));
-                byte b_col = (byte)(50 + (205 * t));
+                border.BorderBrush = frozen;
+            }
 
-                System.Windows.Media.Color lightColor = System.Windows.Media.Color.FromRgb(r, g, b_col);
-                border.BorderBrush = new SolidColorBrush(lightColor);
-
-                if (border.Effect is System.Windows.Media.Effects.BlurEffect blur)
+            // Der Glow braucht bei jeder Aenderung von Farbe oder Dicke
+            // neue Verlaeufe - aber nur dann, nicht pro Frame.
+            for (int i = 0; i < _glowPanels.Count; i++)
+            {
+                if (i < _coreBorders.Count)
                 {
-                    blur.Radius = Math.Min(40, thickness * 0.4);
+                    RebuildGlow(_glowPanels[i], (Rect)_coreBorders[i].Tag, thickness, lightColor);
                 }
             }
 
