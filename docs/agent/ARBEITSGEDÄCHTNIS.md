@@ -105,6 +105,23 @@ Effects werden über die Bounds auf eine Zwischenfläche gerechnet.
   - **Fallstrick 2:** `ShouldWalk(0,0)` war false, weil 0−0 < 1000. Sonderfall
     "noch nie gemessen" muss sofort messen.
 
+## 3d. Portable EXE (Workflow `portable-exe.yml`)
+
+* Baut bei jedem Push auf `WinRinglight/**` eine **einzelne** `WinRinglight.exe`
+  (self-contained, win-x64, komprimiert, ~67 MB).
+* Liegt als **privates Artefakt** am Lauf – **kein Release**.
+  Grund: Das Repo ist **public**, ein Release-Asset wäre für jeden ladbar.
+* Artefakt-URL: `https://github.com/PeWieser/WinRinglight/actions/runs/<id>`
+* Der Workflow kommentiert den PR selbst mit Größe und Download-Hinweis.
+* Achtung: `gh run download` funktioniert aus der Sandbox **nicht**
+  (Blob-Storage blockiert). Die Metadaten gehen über die API.
+
+**Wichtig für den Nutzer:** Die Performance-Schalter liegen jetzt in
+`SettingsData` und landen damit in `%LOCALAPPDATA%\WinRinglight\settings.json`.
+Beim ersten Start wird die Datei angelegt (sonst gäbe es nichts zu bearbeiten).
+`Config.X` sind Durchreiche-Eigenschaften auf `Current.X`, mit Klemmung gegen
+Unsinnswerte (NaN, negativ, zu groß).
+
 ## 4. Fehler, die ich schon gemacht habe (nicht wiederholen)
 
 * **CI-Workflow, der eine WPF-App unter `ubuntu-latest` baut** → geht nicht.

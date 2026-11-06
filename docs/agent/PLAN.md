@@ -91,18 +91,24 @@ es 18 % teurer.
 **Warum es flüssig bleibt:** Der Glow hängt an Größe/Dicke/Farbe, nicht an der
 Mausposition. `GlowRebuildPolicy` verhindert den Neubau bei Bewegung (7 Tests).
 
-## Phase 4 – Nur rechnen, wenn sich etwas bewegt  ← **als Nächstes**
+## Phase 4 – Nur rechnen, wenn sich etwas bewegt  ← **✅ erledigt**
 
 | | Aufgabe | Status |
 |---|---|---|
-| 4.1 | `CompositionTarget.Rendering` abbestellen | ☐ |
-| 4.2 | `DispatcherTimer` 30 Hz, nur bei aktivem Ring | ☐ |
-| 4.3 | Tote Zone: erst ab ±2 px neu zeichnen | ☐ |
-| 4.4 | Auto-Temperatur drosseln (nur bei > 50 K Änderung) | ☐ |
+| 4.1 | `CompositionTarget.Rendering` abbestellen | ✅ ersatzlos raus |
+| 4.2 | `DispatcherTimer` 33 ms, nur bei aktivem Ring | ✅ `UpdateCursorTimerState` |
+| 4.3 | Tote Zone: erst ab ±2 px neu zeichnen | ✅ schon in Phase 2 |
+| 4.4 | Auto-Temperatur drosseln | ✅ über `GlowRebuildPolicy` (50 K) |
+| 4.5 | Beim Einschalten sofort zeichnen | ✅ gegen sichtbaren Sprung |
 
-**Erwartung:** Stillstand ≈ 0 % CPU.
+**Warum das zählt:** `CompositionTarget.Rendering` hält den Render-Takt der
+UI-Schleife dauerhaft bei 60 Hz wach – auch wenn nichts passiert. Ein
+`DispatcherTimer` schläft dazwischen.
 
-## Phase 5 – Vollbild-Erkennung ohne Dauerfragen
+**Flüssigkeit:** 33 ms = 30 Hz für ein Loch um die Maus. Beim Einschalten wird
+sofort gezeichnet, damit das Loch nicht 33 ms an der alten Stelle hängt.
+
+## Phase 5 – Vollbild-Erkennung ohne Dauerfragen  ← **als Nächstes**
 
 | | Aufgabe | Status |
 |---|---|---|
