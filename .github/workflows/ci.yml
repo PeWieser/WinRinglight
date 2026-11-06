@@ -137,6 +137,17 @@ jobs:
           }
 
           if (Test-Path "build.log") {
+            $errs = Select-String -Path build.log -Pattern ': error ' | Select-Object -First 25 | ForEach-Object { $_.Line.Trim() }
+            if ($errs) {
+              $md += "<details><summary>Build-Fehler</summary>"
+              $md += ""
+              $md += '```'
+              $md += $errs
+              $md += '```'
+              $md += "</details>"
+              $md += ""
+            }
+
             $warn = Select-String -Path build.log -Pattern ': warning ' | Select-Object -First 5 | ForEach-Object { $_.Line.Trim() }
             if ($warn) {
               $md += "<details><summary>Build-Warnungen</summary>"
