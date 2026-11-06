@@ -154,6 +154,35 @@ Ueberlappung bei Radius 120 / 3 / 0. Mit Naht-Toleranz (EPS = 0,01), sonst
 zaehlt die Naht zwischen zwei Stuecken als Luecke. Vorher in Python
 gegengeprueft: 0 Luecken, 0 Ueberlappungen.
 
+## 3f. Die eigentliche Lehre aus dem Glow (Stand `eb3c411`)
+
+**Ich habe 5 Mal am Glow nachgebessert, ohne ihn je zu SEHEN.** Rechnerisch
+richtig, auf dem Bildschirm falsch - zweimal hintereinander.
+
+**Fehler 3 (der letzte, harte Klotz an den Ecken):**
+`RadialGradientBrush` mit `MappingMode.Absolute` bezieht sich auf das
+**Element**, nicht auf die Geometrie. Die Geometrie wurde um `(pad, pad)`
+verschoben, der Brush-Mittelpunkt nicht - der Verlauf sass `pad` daneben, die
+Ecke bekam einen harten Klecks. Fix: Mittelpunkt mitsch
+`(center.X + offsetX, center.Y + offsetY)`.
+
+**Das Werkzeug, das es kuenftig verhindert:** `tools/GlowPreview`
+* rendert den Saum mit dem **echten WPF-Renderer** (`RenderTargetBitmap`)
+* laeuft die **komplette Kernkontur** ab (gerade Kanten + Eckenboegen)
+* tastet je Punkt in 25/50/75 % Bandbreite nach aussen
+* vergleicht jede Stelle mit der geraden Kante und schlaegt bei > 25 %
+  Abweichung oder Luecken fehl (Exitcode 1)
+* laeuft in der CI, Ergebnis steht im PR-Kommentar
+
+**Messwerte nach dem Fix (Apple):** oben 52,1 - links 52,4 - rechts 47,1 -
+Ecken 46,1 bis 52,6. Groesste Abweichung 18,6 %, Aussen bei 220 % nur 13,7.
+Vorher: Ecken 13,7 (73,9 % Abweichung) - die Ecke war praktisch weg und der
+Verlauf sass weit draussen.
+
+**Merksatz:** Bei WPF-Brushes mit `MappingMode.Absolute` immer pruefen, in
+welchem Koordinatensystem sie liegen. Und: Geometrie nie ohne Messung
+"fertig" nennen.
+
 **Zur Frage "echter Squircle":** WPF kann Superellipsen nicht als
 Border-CornerRadius. Mit der neuen Band-Konstruktion ist ein Squircle-Pfad
 moeglich (Geometrie statt Border), aber das ist ein eigenes Thema - erst nach
