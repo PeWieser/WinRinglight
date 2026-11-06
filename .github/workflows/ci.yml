@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Tests (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .NET einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Versionen zeigen
+        run: dotnet --info
+
+      - name: App bauen
+        id: build
+        shell: pwsh
+        run: |
+          $log = "build.log"
+          dotnet build WinRinglight/WinRinglight.csproj -c Release -warnaserror:false -v minimal 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $warn = (Select-String -Path $log -Pattern ': warning ' -AllMatches).Count
+          $err  = (Select-String -Path $log -Pattern ': error ' -AllMatches).Count
+          "build_exit=$code"   >> $env:GITHUB_OUTPUT
+          "warnings=$warn"     >> $env:GITHUB_OUTPUT
+          "errors=$err"        >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { exit $code }
+
+      - name: Tests bauen und laufen lassen
+        id: tests
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "test.log"
+          dotnet test WinRinglight.Tests/WinRinglight.Tests.csproj -c Release -v minimal --logger "console;verbosity=normal" 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $passed = (Select-String -Path $log -Pattern 'Passed!\s*-\s*Failed:\s*0' -AllMatches).Count
+          $m = Select-String -Path $log -Pattern 'Passed:\s*(\d+),\s*Failed:\s*(\d+),\s*Skipped:\s*(\d+)' | Select-Object -Last 1
+          $p=$null;$f=$null;$s=$null
+          if ($m) { $p=$m.Matches[0].Groups[1].Value; $f=$m.Matches[0].Groups[2].Value; $s=$m.Matches[0].Groups[3].Value }
+          "test_exit=$code"    >> $env:GITHUB_OUTPUT
+          "passed=$p"          >> $env:GITHUB_OUTPUT
+          "failed=$f"          >> $env:GITHUB_OUTPUT
+          "skipped=$s"         >> $env:GITHUB_OUTPUT
+          if ($code -ne 0) { exit $code }
+
+      - name: Ergebnisse zusammenfassen
+        id: summary
+        if: always()
+        shell: pwsh
+        run: |
+          $b = "${{ steps.build.outputs.build_exit }}"
+          $w = "${{ steps.build.outputs.warnings }}"
+          $e = "${{ steps.build.outputs.errors }}"
+          $t = "${{ steps.tests.outputs.test_exit }}"
+          $p = "${{ steps.tests.outputs.passed }}"
+          $f = "${{ steps.tests.outputs.failed }}"
+
+          $buildIcon = if ($b -eq "0") { "✅" } else { "❌" }
+          $testIcon  = if ($t -eq "0") { "✅" } else { "❌" }
+
+          $md = @()
+          $md += "## CI-Ergebnis"
+          $md += ""
+          $md += "| Schritt | Ergebnis | Detail |"
+          $md += "|---|---|---|"
+          $md += "| Build (`WinRinglight.csproj`) | $buildIcon | exit=$b, Fehler=$e, Warnungen=$w |"
+          $md += "| Tests (`ScreenLayoutTests`) | $testIcon | exit=$t, bestanden=$p, fehlgeschlagen=$f |"
+          $md += ""
+          $md += "Commit: ``${{ github.sha }}``"
+          $md += "Branch: ``${{ github.ref_name }}``"
+          $md += "Lauf: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $md | Out-File -FilePath result.md -Encoding utf8
+
+      - name: Kommentar in den Pull Request schreiben
+        if: always() && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $pr = gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number'
+          if ([string]::IsNullOrWhiteSpace($pr)) {
+            Write-Host "Kein Pull Request fuer diesen Branch - Kommentar uebersprungen."
+            exit 0
+          }
+          gh pr comment $pr --body-file result.md
+          Write-Host "Kommentar in PR #$pr geschrieben."
+
+      - name: Logs hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            build.log
+            test.log
+          retention-days: 7
