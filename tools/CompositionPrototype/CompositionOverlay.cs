@@ -4,7 +4,7 @@ using System.ComponentModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
-using Windows.UI;
+using Color = Windows.UI.Color;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
 using WinRT;
