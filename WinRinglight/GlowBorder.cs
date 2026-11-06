@@ -36,7 +36,7 @@ namespace WinRinglight
                 color.A = (byte)Math.Round(color.A * alpha * source.Opacity);
                 var brush = new SolidColorBrush(color);
                 brush.Freeze();
-                var pen = new Pen(brush, thickness + 2 * spread);
+                var pen = new System.Windows.Media.Pen(brush, thickness + 2 * spread);
                 pen.Freeze();
                 dc.DrawRoundedRectangle(null, pen, rect, radius, radius);
             }
