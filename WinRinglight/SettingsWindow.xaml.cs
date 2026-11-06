@@ -37,6 +37,9 @@ namespace WinRinglight
             // Load texts from config
             TabAppearance.Header = Config.GetText("TabAppearance");
             TabSystem.Header = Config.GetText("TabSystem");
+            LblCursorFps.Text = Config.GetText("CursorFps");
+            LblUnlimitedFps.Text = Config.GetText("CursorFpsUnlimited");
+            LblFpsWarning.Text = Config.GetText("CursorFpsWarning");
             LblThickness.Text = Config.GetText("ChangeRinglightSize");
             LblTemperature.Text = Config.GetText("ColorTemperature");
             LblTheme.Text = Config.GetText("VisualTheme");
@@ -64,7 +67,6 @@ namespace WinRinglight
             SliderThickness.Minimum = screenH * Config.MinRinglightWidthPercent;
             SliderThickness.Maximum = screenH * Config.MaxRinglightWidthPercent;
 
-            SliderTemperature.IsEnabled = !Config.Current.AutoTemperature;
             SliderThickness.Value = Config.Current.Thickness;
             SliderTemperature.Value = Config.Current.Temperature;
 
@@ -76,6 +78,12 @@ namespace WinRinglight
             CheckAutostartStatus();
             ChkWebcam.IsChecked = Config.Current.AutoWebcam;
             ChkAutoTemp.IsChecked = Config.Current.AutoTemperature;
+            Config.Current.CursorMaxFps = Math.Clamp(Config.Current.CursorMaxFps, 1, 240);
+            TxtCursorFps.Text = Config.Current.CursorMaxFps.ToString();
+            ChkUnlimitedFps.IsChecked = Config.Current.CursorUnlimitedFps;
+            TxtCursorFps.IsEnabled = !Config.Current.CursorUnlimitedFps;
+            BtnCursorFpsUp.IsEnabled = !Config.Current.CursorUnlimitedFps;
+            BtnCursorFpsDown.IsEnabled = !Config.Current.CursorUnlimitedFps;
         }
 
         // --- APPEARANCE TAB LOGIC ---
@@ -143,7 +151,6 @@ namespace WinRinglight
 
             Config.Current.AutoTemperature = ChkAutoTemp.IsChecked == true;
 
-            SliderTemperature.IsEnabled = !Config.Current.AutoTemperature;
 
             _mainWindow.TransitionTemperatureMode();
             Config.Save();
@@ -179,13 +186,61 @@ namespace WinRinglight
             }
             Config.Current.Temperature = SliderTemperature.Value;
 
-            if ((DateTime.Now - _lastRender).TotalMilliseconds > 16)
+            if (!Config.Current.AutoTemperature && (DateTime.Now - _lastRender).TotalMilliseconds > 16)
             {
                 SendLiveUpdate();
                 _lastRender = DateTime.Now;
             }
             _updateTimer.Stop();
             _updateTimer.Start();
+        }
+
+        private void ApplyCursorFps()
+        {
+            if (!IsLoaded) return;
+            if (!int.TryParse(TxtCursorFps.Text, out int fps)) fps = Config.Current.CursorMaxFps;
+            fps = Math.Clamp(fps, 1, 240);
+            Config.Current.CursorMaxFps = fps;
+            TxtCursorFps.Text = fps.ToString();
+            _mainWindow.RefreshCursorTracking();
+            Config.Save();
+        }
+
+        private void CursorFps_Changed(object sender, RoutedEventArgs e) => ApplyCursorFps();
+
+        private void CursorFps_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyCursorFps();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Up || e.Key == Key.Down)
+            {
+                ChangeCursorFps(e.Key == Key.Up ? 1 : -1);
+                e.Handled = true;
+            }
+        }
+
+        private void ChangeCursorFps(int delta)
+        {
+            if (!int.TryParse(TxtCursorFps.Text, out int fps)) fps = Config.Current.CursorMaxFps;
+            TxtCursorFps.Text = Math.Clamp((long)fps + delta, 1, 240).ToString();
+            ApplyCursorFps();
+        }
+
+        private void CursorFpsUp_Click(object sender, RoutedEventArgs e) => ChangeCursorFps(1);
+        private void CursorFpsDown_Click(object sender, RoutedEventArgs e) => ChangeCursorFps(-1);
+
+        private void UnlimitedFps_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            Config.Current.CursorUnlimitedFps = ChkUnlimitedFps.IsChecked == true;
+            TxtCursorFps.IsEnabled = !Config.Current.CursorUnlimitedFps;
+            BtnCursorFpsUp.IsEnabled = !Config.Current.CursorUnlimitedFps;
+            BtnCursorFpsDown.IsEnabled = !Config.Current.CursorUnlimitedFps;
+            _mainWindow.RefreshCursorTracking();
+            Config.Save();
         }
 
         private void SendLiveUpdate()

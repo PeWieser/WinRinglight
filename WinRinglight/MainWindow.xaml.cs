@@ -112,6 +112,7 @@ namespace WinRinglight
 
         private DispatcherTimer? _webcamTimer;
         private DispatcherTimer? _cursorTimer;
+        private bool _cursorRenderingSubscribed;
         private DispatcherTimer? _temperatureTimer;
         private readonly System.Diagnostics.Stopwatch _temperatureClock = new();
         private double _displayedTemperature;
@@ -225,7 +226,7 @@ namespace WinRinglight
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
-            _cursorTimer?.Stop();
+            StopCursorTracking();
             _temperatureTimer?.Stop();
             _webcamTimer?.Stop();
             _fullscreenTimer?.Stop();
@@ -331,11 +332,11 @@ namespace WinRinglight
                 // while the light was off, before the fade-in begins.
                 _hasCursorPosition = false;
                 UpdateCursorCutout(null, EventArgs.Empty);
-                _cursorTimer?.Start();
+                RefreshCursorTracking();
             }
             else
             {
-                _cursorTimer?.Stop();
+                StopCursorTracking();
                 // No need to keep animating a color while the light fades out.
                 if (_temperatureTimer?.IsEnabled == true)
                 {
@@ -505,6 +506,34 @@ namespace WinRinglight
             }
         }
 
+
+        private void StopCursorTracking()
+        {
+            _cursorTimer?.Stop();
+            if (_cursorRenderingSubscribed)
+            {
+                CompositionTarget.Rendering -= UpdateCursorCutout;
+                _cursorRenderingSubscribed = false;
+            }
+        }
+
+        public void RefreshCursorTracking()
+        {
+            StopCursorTracking();
+            if (!_isRinglightOn || _cursorTimer == null) return;
+            if (Config.Current.CursorUnlimitedFps)
+            {
+                // Uncapped by the app, but still limited by WPF's render cadence.
+                CompositionTarget.Rendering += UpdateCursorCutout;
+                _cursorRenderingSubscribed = true;
+            }
+            else
+            {
+                int fps = Math.Clamp(Config.Current.CursorMaxFps, 1, 240);
+                _cursorTimer.Interval = TimeSpan.FromSeconds(1.0 / fps);
+                _cursorTimer.Start();
+            }
+        }
 
         private void UpdateCursorCutout(object? sender, EventArgs e)
         {

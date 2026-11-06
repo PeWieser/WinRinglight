@@ -38,9 +38,20 @@ namespace WinRinglight
                 color.A = (byte)Math.Round(color.A * alpha * source.Opacity);
                 var brush = new SolidColorBrush(color);
                 brush.Freeze();
-                var pen = new System.Windows.Media.Pen(brush, thickness + 2 * spread);
-                pen.Freeze();
-                dc.DrawRoundedRectangle(null, pen, rect, radius, radius);
+                // Only the edges can be seen: the opaque core covers the
+                // center of the old wide stroke. Draw narrow strokes around
+                // those edges rather than shading the full ring 12 times.
+                var edgePen = new System.Windows.Media.Pen(brush, 2 * spread);
+                edgePen.Freeze();
+                var outer = new Rect(0, 0, width, height);
+                double outerRadius = radius + half;
+                dc.DrawRoundedRectangle(null, edgePen, outer, outerRadius, outerRadius);
+                if (width > 2 * thickness && height > 2 * thickness)
+                {
+                    var inner = new Rect(thickness, thickness, width - 2 * thickness, height - 2 * thickness);
+                    double innerRadius = Math.Max(0, radius - half);
+                    dc.DrawRoundedRectangle(null, edgePen, inner, innerRadius, innerRadius);
+                }
             }
         }
     }

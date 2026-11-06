@@ -14,6 +14,8 @@ namespace WinRinglight
         public double Thickness { get; set; } = 60;
         public double Temperature { get; set; } = 4000;
         public bool AutoTemperature { get; set; } = false;
+        public int CursorMaxFps { get; set; } = 60;
+        public bool CursorUnlimitedFps { get; set; } = false;
         public int VisualStyleIndex { get; set; } = 0;
         public bool IsSpanned { get; set; } = false;
         // List of monitor indices that should show a ringlight
@@ -94,6 +96,18 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "CursorFps", new Dictionary<string, string> {
+                { "de", "Cursor-Aussparung: maximale FPS (1–240)" },
+                { "en", "Cursor cutout: maximum FPS (1–240)" }
+            }},
+            { "CursorFpsUnlimited", new Dictionary<string, string> {
+                { "de", "Unbegrenzt (WPF-Render-Takt)" },
+                { "en", "Unlimited (WPF render rate)" }
+            }},
+            { "CursorFpsWarning", new Dictionary<string, string> {
+                { "de", "Warnung: Unbegrenzt kann CPU- und GPU-Last sowie Energieverbrauch erhöhen. Die tatsächliche Rate hängt von WPF ab." },
+                { "en", "Warning: Unlimited can increase CPU, GPU and power usage. The actual rate depends on WPF." }
+            }},
             { "AppName", new Dictionary<string, string> { 
                 { "de", "WinRinglight" }, 
                 { "en", "WinRinglight" } 
