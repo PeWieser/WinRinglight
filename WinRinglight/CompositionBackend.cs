@@ -28,6 +28,7 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionColorBrush? _coreBrush;
     private double _currentThickness;
     private float _dpiScale = 1;
+    public float DpiScale => _dpiScale;
     private CompositionRoundedRectangleGeometry? _geometry;
     private bool _currentRounded;
     private IntPtr _hwnd;
@@ -40,7 +41,7 @@ internal sealed class CompositionBackend : IDisposable
     private int _lastX = int.MinValue, _lastY = int.MinValue;
 
     public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
-        double kelvin, bool excludeCapture, bool visible, float cursorRadius)
+        double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
@@ -58,7 +59,7 @@ internal sealed class CompositionBackend : IDisposable
                 throw new Win32Exception(Marshal.GetLastWin32Error());
 
             uint dpi = GetDpiForWindow(_hwnd);
-            _dpiScale = dpi > 0 ? dpi / 96f : 1f;
+            _dpiScale = sharedDpiScale ?? (dpi > 0 ? dpi / 96f : 1f);
 
             // Apply exclusion before showing any overlay pixels.
             if (excludeCapture && !SetCaptureExcluded(true))

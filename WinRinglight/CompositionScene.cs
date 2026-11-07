@@ -10,11 +10,14 @@ internal sealed class CompositionScene : IDisposable
     private readonly List<CompositionBackend> _windows = new();
     private CompositionLayout.Piece[] _layout = Array.Empty<CompositionLayout.Piece>();
     private float _cursorRadius;
+    private bool _sharedGeometry;
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible)
     {
-        if (SameViewports(layout) && _cursorRadius == cursorRadius)
+        bool sharedGeometry = layout.Length > 1;
+        for (int i = 1; i < layout.Length; i++) sharedGeometry &= layout[i].Ring == layout[0].Ring;
+        if (SameViewports(layout) && _cursorRadius == cursorRadius && sharedGeometry == _sharedGeometry)
         {
             for (int i = 0; i < layout.Length; i++) _windows[i].SetLayout(layout[i].Ring, true);
             _layout = (CompositionLayout.Piece[])layout.Clone();
@@ -24,7 +27,12 @@ internal sealed class CompositionScene : IDisposable
         try
         {
             foreach (var piece in layout)
-                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius));
+            {
+                // A single spanned ring must use one scale on all pieces or its
+                // outlines will split at a mixed-DPI monitor boundary.
+                float? sharedScale = sharedGeometry && replacements.Count > 0 ? replacements[0].DpiScale : null;
+                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale));
+            }
         }
         catch
         {
@@ -36,6 +44,7 @@ internal sealed class CompositionScene : IDisposable
         _windows.AddRange(replacements);
         _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
+        _sharedGeometry = sharedGeometry;
     }
 
     public void InvalidateLayout() => _cursorRadius = -1;
