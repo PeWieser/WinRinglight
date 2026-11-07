@@ -750,6 +750,13 @@ internal static class Program
                 Console.WriteLine("PARTIAL: Firefox was installed but could not open an interactive fixture; Firefox-to-Chrome remains untested.");
                 try { if (!ff.HasExited) ff.Kill(true); } catch { }
                 ff.Dispose(); ff = null;
+                // Isolated CI desktop only: the Firefox launcher may have
+                // exited after spawning a detached browser process.
+                foreach (var child in System.Diagnostics.Process.GetProcessesByName("firefox"))
+                {
+                    try { if (!child.HasExited) child.Kill(true); } catch { }
+                    child.Dispose();
+                }
             }
             if (ff != null)
             {
@@ -842,7 +849,7 @@ internal static class Program
         const int width = 320, height = 200;
         var bounds = new System.Drawing.Rectangle(screen.WorkingArea.Left + 60, screen.WorkingArea.Top + 60, width, height);
         var background = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize,
-            Left = bounds.Left, Top = bounds.Top, Width = width, Height = height, Background = Brushes.Black };
+            Left = bounds.Left, Top = bounds.Top, Width = width, Height = height, Topmost = true, Background = Brushes.Black };
         var color = System.Windows.Media.Color.FromRgb(246, 203, 141);
         var brush = new SolidColorBrush(color);
         var canvas = new Grid { Width = width, Height = height, Background = Brushes.Black };
