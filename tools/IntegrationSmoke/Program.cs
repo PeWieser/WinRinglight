@@ -40,8 +40,7 @@ internal static class Program
             Pump();
             var dpi = VisualTreeHelper.GetDpi(window);
             var screens = System.Windows.Forms.Screen.AllScreens;
-            if (!CompositionPolicy.CanUse(OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362),
-                screens.Length, false, Config.Current.SelectedMonitors, false, dpi.DpiScaleX, dpi.DpiScaleY))
+            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362) || screens.Length == 0)
             {
                 Console.WriteLine($"SKIP: Composition eligibility not met (screens={screens.Length}, dpi={dpi.DpiScaleX}/{dpi.DpiScaleY}).");
                 return 0;
@@ -111,9 +110,8 @@ internal static class Program
             window.SetCompositionExperiment(true);
             if (!window.DevCompositionActive) throw new Exception("Composition reactivation failed: " + window.DevCompositionStatus);
             TestSettings(window);
-            window.ApplyStyleLive(false);
-            if (window.DevCompositionActive) throw new Exception("Style-change fallback did not occur.");
-            Console.WriteLine("PASS: Composition reactivation and style-change fallback.");
+            TestLayouts(window, screens);
+            Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
         }
         catch (Exception ex)
@@ -165,15 +163,22 @@ internal static class Program
             fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
             if (Config.Current.CursorMaxFps != 60 || Config.Current.CursorUnlimitedFps)
                 throw new Exception("Cursor FPS setting did not restore.");
-            Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider and cursor FPS modes.");
+            var style = (ComboBox)settings.FindName("ComboStyle");
+            style.SelectedIndex = 1;
+            if (!window.DevCompositionActive) throw new Exception("Style change caused fallback: " + window.DevCompositionStatus);
+            PumpFor(450);
+            if ((bool)GetFirstBackend(window).GetType().GetField("_currentRounded", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Composition style did not change.");
+            style.SelectedIndex = 0;
+            if (!window.DevCompositionActive) throw new Exception("Style change back caused fallback.");
+            Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor FPS and style changes.");
         }
         finally { settings.Close(); }
     }
 
     private static Windows.UI.Color GetCoreColor(MainWindow window)
     {
-        object backend = typeof(MainWindow).GetField("_compositionBackend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)
-            ?? throw new Exception("Composition backend missing.");
+        object backend = GetFirstBackend(window);
         var brush = (Windows.UI.Composition.CompositionColorBrush?)backend.GetType().GetField("_coreBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)
             ?? throw new Exception("Composition color brush missing.");
         return brush.Color;
@@ -188,10 +193,67 @@ internal static class Program
         Dispatcher.PushFrame(frame);
     }
 
+    private static object GetScene(MainWindow window) => typeof(MainWindow).GetField("_compositionBackend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)
+        ?? throw new Exception("Composition scene missing.");
+    private static System.Collections.IList GetWindows(MainWindow window) =>
+        (System.Collections.IList)GetScene(window).GetType().GetField("_windows", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetScene(window))!;
+    private static object GetFirstBackend(MainWindow window) => GetWindows(window)[0]!;
+
+    private static void TestLayouts(MainWindow window, System.Windows.Forms.Screen[] screens)
+    {
+        var fullscreenField = typeof(MainWindow).GetField("_isFullscreenActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        fullscreenField.SetValue(window, true);
+        window.UpdateMonitorSetup();
+        AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
+        if (!window.DevCompositionActive) throw new Exception("Fullscreen caused fallback.");
+        fullscreenField.SetValue(window, false);
+        window.UpdateMonitorSetup();
+        AssertBounds(GetCompositionHwnd(window), screens[0].WorkingArea);
+        Config.Current.IsSpanned = true;
+        window.UpdateMonitorSetup();
+        if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Spanned mode failed.");
+        Config.Current.IsSpanned = false;
+        Config.Current.SelectedMonitors.Clear();
+        window.UpdateMonitorSetup();
+        if (!window.DevCompositionActive || GetWindows(window).Count != 0) throw new Exception("Empty monitor selection failed.");
+        Config.Current.SelectedMonitors.Add(0);
+        window.UpdateMonitorSetup();
+        if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Monitor reselection failed.");
+
+        // Exercise two independent real Composition HWNDs even on a one-monitor runner.
+        var scene = GetScene(window);
+        var area = screens[0].WorkingArea;
+        var left = new System.Drawing.Rectangle(area.Left, area.Top, area.Width / 2, area.Height);
+        var right = new System.Drawing.Rectangle(left.Right, area.Top, area.Width - left.Width, area.Height);
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] { new[] { left, right }, 300f,
+            (float)Config.Current.Thickness, true, 4000d, true, true });
+        var windows = GetWindows(window);
+        if (windows.Count != 2) throw new Exception("Two-window scene was not created.");
+        for (int i = 0; i < 2; i++)
+        {
+            var backend = windows[i]!;
+            IntPtr hwnd = (IntPtr)backend.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            AssertBounds(hwnd, i == 0 ? left : right);
+            if (!GetWindowDisplayAffinity(hwnd, out uint affinity) || affinity != 0x11)
+                throw new Exception("Capture exclusion missing on a multi-window scene.");
+        }
+        Config.Current.HideFromCapture = false;
+        window.ApplyCaptureAffinity();
+        window.UpdateMonitorSetup();
+        if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Returning to real monitor layout failed.");
+        Console.WriteLine("PASS: Fullscreen/working area, spanning, empty selection, reselection and two-HWND scene with capture exclusion.");
+    }
+
+    private static void AssertBounds(IntPtr hwnd, System.Drawing.Rectangle expected)
+    {
+        if (!GetWindowRect(hwnd, out NativeRect r) || r.Left != expected.Left || r.Top != expected.Top ||
+            r.Right != expected.Right || r.Bottom != expected.Bottom)
+            throw new Exception($"Composition bounds differ from expected {expected}.");
+    }
+
     private static IntPtr GetCompositionHwnd(MainWindow window)
     {
-        object backend = typeof(MainWindow).GetField("_compositionBackend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)
-            ?? throw new Exception("Composition backend missing.");
+        object backend = GetFirstBackend(window);
         return (IntPtr)(backend.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)
             ?? throw new Exception("Composition HWND missing."));
     }
@@ -202,6 +264,8 @@ internal static class Program
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => frame.Continue = false));
         Dispatcher.PushFrame(frame);
     }
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
     [DllImport("user32.dll")] private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] private static extern bool CloseDesktop(IntPtr desktop);

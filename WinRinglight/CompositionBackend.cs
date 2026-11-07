@@ -27,6 +27,8 @@ internal sealed class CompositionBackend : IDisposable
     private readonly List<CompositionColorBrush> _haloBrushes = new();
     private CompositionColorBrush? _coreBrush;
     private double _currentThickness;
+    private float _dpiScale = 1;
+    private CompositionRoundedRectangleGeometry? _geometry;
     private bool _currentRounded;
     private IntPtr _hwnd;
     private Compositor? _compositor;
@@ -52,6 +54,9 @@ internal sealed class CompositionBackend : IDisposable
             // This is experimental with a NOREDIRECTIONBITMAP Composition host.
             if (!SetLayeredWindowAttributes(_hwnd, 0, 255, LwaAlpha))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
+
+            uint dpi = GetDpiForWindow(_hwnd);
+            _dpiScale = dpi > 0 ? dpi / 96f : 1f;
 
             // Apply exclusion before showing any overlay pixels.
             if (excludeCapture && !SetCaptureExcluded(true))
@@ -100,11 +105,17 @@ internal sealed class CompositionBackend : IDisposable
 
     private T KeepRing<T>(T value) where T : CompositionObject { _ringObjects.Add(value); return value; }
 
-    public void SetRing(float thickness, bool rounded, double kelvin)
+    public void SetRing(float thickness, bool rounded, double kelvin, bool animateStyle = false)
     {
         if (_compositor == null || _ring == null) return;
-        if (_coreBrush != null && _currentThickness == thickness && _currentRounded == rounded)
+        thickness *= _dpiScale;
+        if (_coreBrush != null && _currentThickness == thickness)
         {
+            if (_currentRounded != rounded && _geometry != null)
+            {
+                _currentRounded = rounded;
+                SetGeometry(_geometry, thickness, rounded, animateStyle);
+            }
             UpdateColor(kelvin);
             return;
         }
@@ -115,14 +126,9 @@ internal sealed class CompositionBackend : IDisposable
         _currentRounded = rounded;
         for (int i = _ringObjects.Count - 1; i >= 0; i--) _ringObjects[i].Dispose();
         _ringObjects.Clear();
-        float inset = rounded ? 20 : 0;
-        float w = _width - inset * 2, h = _height - inset * 2;
-        float radius = rounded ? Math.Min(_width, _height) * 0.22f : 3;
-        float half = thickness / 2;
         var geometry = KeepRing(_compositor.CreateRoundedRectangleGeometry());
-        geometry.Offset = new Vector2(inset + half);
-        geometry.Size = new Vector2(w - thickness, h - thickness);
-        geometry.CornerRadius = new Vector2(radius);
+        _geometry = geometry;
+        SetGeometry(geometry, thickness, rounded, false);
         var color = ToColor(kelvin);
         float blur = Math.Min(40, thickness * 0.4f);
         for (int i = 12; i >= 1; i--)
@@ -141,6 +147,38 @@ internal sealed class CompositionBackend : IDisposable
         core.StrokeBrush = _coreBrush;
         core.StrokeThickness = thickness;
         _ring.Shapes.Add(core);
+    }
+
+    private void SetGeometry(CompositionRoundedRectangleGeometry geometry, float thickness, bool rounded, bool animate)
+    {
+        float inset = rounded ? 20 * _dpiScale : 0;
+        float radius = rounded ? Math.Min(_width, _height) * 0.22f : 3 * _dpiScale;
+        var offset = new Vector2(inset + thickness / 2);
+        var size = new Vector2(Math.Max(0, _width - inset * 2 - thickness), Math.Max(0, _height - inset * 2 - thickness));
+        if (!animate || _compositor == null)
+        {
+            geometry.Offset = offset;
+            geometry.Size = size;
+        }
+        else
+        {
+            AnimateVector(geometry, "Offset", offset);
+            AnimateVector(geometry, "Size", size);
+        }
+        // The original WPF corner radius changes immediately on a style switch.
+        geometry.CornerRadius = new Vector2(radius);
+    }
+
+    private void AnimateVector(CompositionObject target, string property, Vector2 to)
+    {
+        if (_compositor == null) return;
+        var animation = _compositor.CreateVector2KeyFrameAnimation();
+        var easing = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.455f, 0.03f), new Vector2(0.515f, 0.955f));
+        animation.InsertKeyFrame(1, to, easing);
+        animation.Duration = TimeSpan.FromSeconds(0.4);
+        target.StartAnimation(property, animation);
+        animation.Dispose();
+        easing.Dispose();
     }
 
     private static Color ToColor(double kelvin)
@@ -187,7 +225,7 @@ internal sealed class CompositionBackend : IDisposable
         _ringObjects.Clear();
         for (int i = _objects.Count - 1; i >= 0; i--) _objects[i].Dispose();
         _objects.Clear();
-        _gradient = null; _ring = null; _result = null;
+        _gradient = null; _ring = null; _result = null; _geometry = null;
         _haloBrushes.Clear(); _coreBrush = null;
         _compositor?.Dispose(); _compositor = null;
         if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
@@ -230,5 +268,6 @@ internal sealed class CompositionBackend : IDisposable
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int command);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 }

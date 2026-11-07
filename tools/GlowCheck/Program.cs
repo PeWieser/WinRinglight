@@ -16,17 +16,23 @@ internal static class Program
             TemperatureTransition.At(6000, 2000, -1) != 6000 ||
             TemperatureTransition.At(6000, 2000, 500) != 2000)
             throw new Exception("Temperature transition interpolation failed.");
-        int[] selected = { 0 };
-        if (!CompositionPolicy.CanUse(true, 1, false, selected, false, 1, 1) ||
-            !CompositionPolicy.CanUse(true, 1, true, Array.Empty<int>(), false, 1, 1) ||
-            CompositionPolicy.CanUse(false, 1, false, selected, false, 1, 1) ||
-            CompositionPolicy.CanUse(true, 2, false, selected, false, 1, 1) ||
-            CompositionPolicy.CanUse(true, 1, false, selected, true, 1, 1) ||
-            CompositionPolicy.CanUse(true, 1, false, selected, false, 1.25, 1) ||
-            CompositionPolicy.CanUse(true, 1, false, Array.Empty<int>(), false, 1, 1) ||
-            CompositionPolicy.CanUse(true, 1, false, new[] { 1 }, false, 1, 1))
-            throw new Exception("Composition eligibility policy failed.");
-        Console.WriteLine("Composition eligibility checks passed.");
+        var displays = new[] {
+            new CompositionLayout.Display(new System.Drawing.Rectangle(-1280, 0, 1280, 1024), new System.Drawing.Rectangle(-1280, 0, 1280, 984)),
+            new CompositionLayout.Display(new System.Drawing.Rectangle(0, -200, 1920, 1080), new System.Drawing.Rectangle(0, -200, 1920, 1040))
+        };
+        var individual = CompositionLayout.Build(displays, false, new[] { 1, 0, 1, -1, 4 }, false);
+        if (individual.Length != 2 || individual[0] != displays[1].WorkingArea || individual[1] != displays[0].WorkingArea)
+            throw new Exception("Composition selected-monitor layout failed.");
+        var fullscreen = CompositionLayout.Build(displays, false, new[] { 0, 1 }, true);
+        if (fullscreen.Length != 2 || fullscreen[0] != displays[0].Bounds || fullscreen[1] != displays[1].Bounds)
+            throw new Exception("Composition fullscreen layout failed.");
+        var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), true);
+        if (span.Length != 1 || span[0] != System.Drawing.Rectangle.Union(displays[0].WorkingArea, displays[1].WorkingArea))
+            throw new Exception("Composition spanned layout failed.");
+        if (CompositionLayout.Build(displays, false, Array.Empty<int>(), false).Length != 0 ||
+            CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), false).Length != 0)
+            throw new Exception("Composition empty display layout failed.");
+        Console.WriteLine("Composition multi-monitor layout checks passed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {
             var halo = new GlowBorder { Width = 320, Height = 200,

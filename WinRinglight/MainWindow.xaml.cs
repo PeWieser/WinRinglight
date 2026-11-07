@@ -226,6 +226,7 @@ namespace WinRinglight
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
             StopCursorTracking();
             StopComposition();
             _temperatureTimer?.Stop();
@@ -249,6 +250,7 @@ namespace WinRinglight
             source?.AddHook(HwndHook);
 
             UpdateMonitorSetup();
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
 
             RegisterHotkeyFromString(Config.Current.HotkeyText);
 
@@ -258,6 +260,12 @@ namespace WinRinglight
             _fullscreenTimer?.Start();
 
             FlushMemory();
+        }
+
+        private void DisplaySettingsChanged(object? sender, EventArgs e)
+        {
+            if (!Dispatcher.HasShutdownStarted)
+                Dispatcher.BeginInvoke(new Action(() => { if (IsLoaded) { _compositionBackend?.InvalidateLayout(); UpdateMonitorSetup(); } }));
         }
 
         public void FlushMemory()
@@ -273,6 +281,9 @@ namespace WinRinglight
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             const int WM_HOTKEY = 0x0312;
+            const int WM_DPICHANGED = 0x02E0;
+            if (msg == WM_DPICHANGED)
+                Dispatcher.BeginInvoke(new Action(() => { if (IsLoaded) { _compositionBackend?.InvalidateLayout(); UpdateMonitorSetup(); } }));
             if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
             {
                 ToggleRinglight();
@@ -605,9 +616,11 @@ namespace WinRinglight
 
         public void ApplyStyleLive(bool isAppleStyle)
         {
-            // Preserve the existing animated style change until the Composition
-            // backend implements an equivalent animation.
-            if (_compositionBackend != null) StopComposition("Style changed; WPF fallback active.");
+            if (_compositionBackend != null)
+            {
+                try { _compositionBackend.SetRing((float)Config.Current.Thickness, isAppleStyle, _displayedTemperature, true); }
+                catch (Exception ex) { FailComposition(ex); }
+            }
             foreach (var border in _activeBorders)
             {
                 Rect baseRect = (Rect)border.Tag;
@@ -632,7 +645,7 @@ namespace WinRinglight
         public bool DevCacheElements { get; private set; }
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
-        private CompositionBackend? _compositionBackend;
+        private CompositionScene? _compositionBackend;
         public bool DevCompositionActive => _compositionBackend != null;
         public string DevCompositionStatus { get; private set; } = "WPF";
         public event EventHandler? DevCompositionChanged;
@@ -643,25 +656,32 @@ namespace WinRinglight
             StopComposition();
             try
             {
-                var screens = System.Windows.Forms.Screen.AllScreens;
-                var dpi = VisualTreeHelper.GetDpi(this);
-                if (!CompositionPolicy.CanUse(OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362),
-                    screens.Length, Config.Current.IsSpanned, Config.Current.SelectedMonitors,
-                    _isFullscreenActive, dpi.DpiScaleX, dpi.DpiScaleY))
+                if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362))
                 {
-                    StopComposition("WPF fallback: requires one monitor, 100% scaling and non-fullscreen.");
+                    StopComposition("WPF fallback: Composition requires Windows 10 version 1903 or later.");
                     return;
                 }
-                var screen = screens[0];
-                _compositionBackend = new CompositionBackend(screen.WorkingArea, (float)Config.Current.Thickness,
-                    Config.Current.VisualStyleIndex == 0, _displayedTemperature,
-                    Config.Current.HideFromCapture, _isRinglightOn,
-                    (float)(screen.Bounds.Height * Config.CursorCutoutRadiusPercent));
+                _compositionBackend = new CompositionScene();
+                ConfigureCompositionScene();
                 MainGrid.Visibility = Visibility.Hidden;
                 DevCompositionStatus = "Composition active (experimental)";
                 DevCompositionChanged?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex) { FailComposition(ex); }
+        }
+
+        private void ConfigureCompositionScene()
+        {
+            if (_compositionBackend == null) return;
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var displays = new CompositionLayout.Display[screens.Length];
+            for (int i = 0; i < screens.Length; i++)
+                displays[i] = new CompositionLayout.Display(screens[i].Bounds, screens[i].WorkingArea);
+            var layout = CompositionLayout.Build(displays, Config.Current.IsSpanned, Config.Current.SelectedMonitors, _isFullscreenActive);
+            var primary = System.Windows.Forms.Screen.PrimaryScreen;
+            float radius = (float)((primary?.Bounds.Height ?? 0) * Config.CursorCutoutRadiusPercent);
+            _compositionBackend.Configure(layout, radius, (float)Config.Current.Thickness,
+                Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn);
         }
 
         private void FailComposition(Exception ex)
@@ -712,9 +732,6 @@ namespace WinRinglight
         public void UpdateMonitorSetup()
         {
             if (!this.IsLoaded) return;
-            // Layout/fullscreen changes retain the existing WPF animations.
-            if (_compositionBackend != null) StopComposition("Display or fullscreen changed; WPF fallback active.");
-
             // WICHTIG: Die Liste wird ganz oben deklariert, damit sie überall gültig ist!
             System.Collections.Generic.List<Rect> targetRects = new System.Collections.Generic.List<Rect>();
 
@@ -744,7 +761,7 @@ namespace WinRinglight
                 var screens = System.Windows.Forms.Screen.AllScreens;
                 foreach (int index in Config.Current.SelectedMonitors)
                 {
-                    if (index < screens.Length)
+                    if (index >= 0 && index < screens.Length)
                     {
                         var s = screens[index];
                         var rect = _isFullscreenActive ? s.Bounds : s.WorkingArea;
@@ -755,6 +772,13 @@ namespace WinRinglight
                     }
                 }
             }
+
+            // A display hotplug can change the desktop bounds without changing
+            // the number of selected ringlights.
+            this.Left = SystemParameters.VirtualScreenLeft;
+            this.Top = SystemParameters.VirtualScreenTop;
+            this.Width = SystemParameters.VirtualScreenWidth;
+            this.Height = SystemParameters.VirtualScreenHeight;
 
             if (_activeBorders.Count != targetRects.Count * 2)
             {
@@ -791,6 +815,11 @@ namespace WinRinglight
                     AnimateBorderToRect(glowBorder, rect, isApple);
                     AnimateBorderToRect(coreBorder, rect, isApple);
                 }
+            }
+            if (_compositionBackend != null)
+            {
+                try { ConfigureCompositionScene(); }
+                catch (Exception ex) { FailComposition(ex); }
             }
         }
 
