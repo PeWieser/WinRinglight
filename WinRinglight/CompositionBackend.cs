@@ -157,7 +157,7 @@ internal sealed class CompositionBackend : IDisposable
         // Subpixel-width, translucent skirts soften the rasterised inner and
         // outer edge of the solid stroke without supersampling a full monitor
         // surface. They do not replace the separately controlled subtle glow.
-        foreach (var edge in new[] { (spread: 2f, alpha: (byte)55), (spread: 1f, alpha: (byte)105) })
+        foreach (var edge in new[] { (spread: 3f, alpha: (byte)30), (spread: 2f, alpha: (byte)65), (spread: 1f, alpha: (byte)110) })
         {
             var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(edge.alpha, color.R, color.G, color.B)));
             _haloBrushes.Add(brush);
