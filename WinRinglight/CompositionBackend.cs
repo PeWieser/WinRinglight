@@ -134,18 +134,28 @@ internal sealed class CompositionBackend : IDisposable
         SetGeometry(geometry, thickness, rounded, false);
         var color = ToColor(kelvin);
         float blur = Math.Min(40, thickness * 0.4f);
-        // More finely spaced contours reduce visible banding while keeping
-        // approximately the same total halo opacity as the original 12 layers.
-        const int layers = 24;
+        const int layers = 12;
         for (int i = layers; i >= 1; i--)
         {
             float fraction = (float)i / layers;
-            byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75) * 12 / layers);
+            byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75));
             var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)));
             _haloBrushes.Add(brush);
             var shape = KeepRing(_compositor.CreateSpriteShape(geometry));
             shape.StrokeBrush = brush;
             shape.StrokeThickness = thickness + 2 * blur * fraction;
+            _ring.Shapes.Add(shape);
+        }
+        // Subpixel-width, translucent skirts soften the rasterised inner and
+        // outer edge of the solid stroke without supersampling a full monitor
+        // surface. They do not replace the separately controlled subtle glow.
+        foreach (var edge in new[] { (spread: 2f, alpha: (byte)55), (spread: 1f, alpha: (byte)105) })
+        {
+            var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(edge.alpha, color.R, color.G, color.B)));
+            _haloBrushes.Add(brush);
+            var shape = KeepRing(_compositor.CreateSpriteShape(geometry));
+            shape.StrokeBrush = brush;
+            shape.StrokeThickness = thickness + edge.spread * _dpiScale;
             _ring.Shapes.Add(shape);
         }
         var core = KeepRing(_compositor.CreateSpriteShape(geometry));
