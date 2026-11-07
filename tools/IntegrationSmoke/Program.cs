@@ -13,6 +13,17 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--caret-fixture")
+        {
+            var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+            using var form = new System.Windows.Forms.Form { Text = "WinRinglight CI caret fixture", StartPosition = System.Windows.Forms.FormStartPosition.Manual,
+                Bounds = new System.Drawing.Rectangle(area.Left + 100, area.Top + 100, 400, 160), TopMost = true };
+            var input = new System.Windows.Forms.TextBox { Left = 20, Top = 20, Width = 250, Text = "Caret fixture" };
+            form.Controls.Add(input);
+            form.Shown += (_, _) => { form.Activate(); input.Focus(); input.SelectionStart = input.Text.Length; };
+            System.Windows.Forms.Application.Run(form);
+            return 0;
+        }
         if (args.Length == 1 && args[0] == "--fullscreen-fixture")
         {
             var screen = System.Windows.Forms.Screen.PrimaryScreen!;
@@ -128,6 +139,7 @@ internal static class Program
             TestFullscreenDetector(window, screens, true);
             TestTiled(window, screens[0]);
             TestCaretMasks(window, screens[0]);
+            TestCaretTracking(window, screens[0]);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -596,6 +608,39 @@ internal static class Program
         }
         window.SetDevTiling(false);
         Console.WriteLine("PASS: Simultaneous mouse/caret masks and caret clearing in WPF, tiled and whole-monitor Composition.");
+    }
+
+    private static void TestCaretTracking(MainWindow window, System.Windows.Forms.Screen screen)
+    {
+        if (Environment.ProcessPath == null || System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("SKIP: Caret fixture requires an apphost."); return;
+        }
+        var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Config.Current.TextCaretCutout = true;
+        window.RefreshCaretTracking();
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--caret-fixture")
+            { UseShellExecute = false, CreateNoWindow = true }) ?? throw new Exception("Could not start caret fixture.");
+        try
+        {
+            for (int i = 0; i < 50 && field.GetValue(window) == null; i++)
+            {
+                if (process.HasExited) throw new Exception("Caret fixture exited unexpectedly.");
+                PumpFor(100);
+            }
+            if (field.GetValue(window) is not System.Drawing.Point caret || !screen.WorkingArea.Contains(caret))
+                throw new Exception("Focused external text caret was not detected on the expected screen.");
+            process.Kill(); process.WaitForExit();
+            for (int i = 0; i < 30 && field.GetValue(window) != null; i++) PumpFor(100);
+            if (field.GetValue(window) != null) throw new Exception("Caret position remained after focus loss.");
+            Console.WriteLine("PASS: External focused text caret detected and cleared on focus loss.");
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            Config.Current.TextCaretCutout = false;
+            window.RefreshCaretTracking();
+        }
     }
 
     private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)
