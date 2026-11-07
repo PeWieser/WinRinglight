@@ -213,10 +213,14 @@ internal static class Program
             fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
             if (Config.Current.CursorMaxFps != 90 || !window.DevCompositionActive)
                 throw new Exception("FPS setting did not update or caused fallback.");
+            object caretTracker = typeof(MainWindow).GetField("_caretTracker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            var caretInterval = caretTracker.GetType().GetField("_intervalMs", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            if ((int)caretInterval.GetValue(caretTracker)! != 11) throw new Exception("Caret rate did not follow the cursor FPS setting.");
             var unlimited = (CheckBox)settings.FindName("ChkUnlimitedFps");
             unlimited.IsChecked = true;
             if (!Config.Current.CursorUnlimitedFps || !window.DevCompositionActive)
                 throw new Exception("Unlimited cursor mode did not activate or caused fallback.");
+            if ((int)caretInterval.GetValue(caretTracker)! != 0) throw new Exception("Unlimited caret rate was not enabled.");
             unlimited.IsChecked = false;
             fps.Text = "60";
             fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
@@ -248,7 +252,7 @@ internal static class Program
             if (ReferenceEquals(sourceBefore, monitorItems.ItemsSource) || monitorItems.Items.Count != System.Windows.Forms.Screen.AllScreens.Length || Config.Current.SelectedMonitors.Count != selectionCount)
                 throw new Exception("Open settings did not refresh monitors or changed the saved selection.");
             Console.WriteLine("PASS: Open settings refreshes monitor list on a display event without changing selection.");
-            Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor FPS and style changes.");
+            Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor/caret FPS and style changes.");
         }
         finally { settings.Close(); }
     }
