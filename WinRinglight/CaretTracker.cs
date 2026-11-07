@@ -167,6 +167,9 @@ internal sealed class CaretTracker : IDisposable
         bool belongsToForeground = FocusBelongsToForeground(focused, foreground);
         if (belongsToForeground)
         {
+            // A document can expose a text selection/caret even when it is not
+            // an input. Never treat a read-only browsing position as an editor.
+            if (!IsEditable(focused!)) return null;
             var modern = FindAutomationCaret(out _);
             if (modern != null) return modern;
             var legacy = FindLegacyCaret(focused, previous, state);
@@ -182,6 +185,25 @@ internal sealed class CaretTracker : IDisposable
             if (ClientToScreen(info.Caret, ref p)) return new Point(p.X, p.Y);
         }
         return null;
+    }
+
+    private static bool IsEditable(AutomationElement focused)
+    {
+        try
+        {
+            if (!focused.Current.IsEnabled || !focused.Current.HasKeyboardFocus) return false;
+            if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out object value))
+                return !((ValuePattern)value).Current.IsReadOnly;
+            if (focused.TryGetCurrentPattern(TextPattern.Pattern, out object text))
+            {
+                object attribute = ((TextPattern)text).DocumentRange.GetAttributeValue(TextPattern.IsReadOnlyAttribute);
+                if (attribute is bool readOnly) return !readOnly;
+            }
+            // Many classic edit controls have incomplete UIA providers. Do not
+            // infer editability for generic browser documents or static text.
+            return focused.Current.ControlType == ControlType.Edit && focused.Current.IsKeyboardFocusable;
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { return false; }
     }
 
     // UIA can temporarily report the element from the previously focused app.
