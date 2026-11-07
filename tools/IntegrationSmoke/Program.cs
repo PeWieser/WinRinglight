@@ -867,6 +867,28 @@ internal static class Program
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
             Console.WriteLine("PASS: Chrome address bar caret tracks start/end and remains visible for selected text.");
             if (ff != null) Console.WriteLine("PASS: Chrome address caret detected after switching directly from Firefox with its text field focused.");
+
+            // Real browser DOM: reject a focused read-only control but retain a
+            // contenteditable input. No text content is read by the application.
+            string html = "<html><body><textarea aria-label='Read-only fixture' readonly>Read only text</textarea><div aria-label='Editable fixture' role='textbox' contenteditable='true'>Editable text</div></body></html>";
+            System.Windows.Clipboard.SetText("data:text/html," + Uri.EscapeDataString(html));
+            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(200);
+            Key(0x11, true); Key(0x56, true); Key(0x56, false); Key(0x11, false);
+            Key(0x0d, true); Key(0x0d, false); PumpFor(1200);
+            var root = System.Windows.Automation.AutomationElement.FromHandle(process.MainWindowHandle);
+            System.Windows.Automation.AutomationElement? Find(string name) => root.FindFirst(System.Windows.Automation.TreeScope.Descendants,
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.NameProperty, name));
+            System.Windows.Automation.AutomationElement? ro = null, editable = null;
+            for (int i = 0; i < 40 && (ro == null || editable == null); i++)
+            { ro = Find("Read-only fixture"); editable = Find("Editable fixture"); if (ro == null || editable == null) PumpFor(100); }
+            if (ro == null || editable == null) throw new Exception("Chrome editable/read-only fixtures were not exposed to UI Automation.");
+            ro.SetFocus();
+            for (int i = 0; i < 30 && field.GetValue(window) != null; i++) PumpFor(100);
+            if (field.GetValue(window) != null) throw new Exception("Chrome read-only field left a false caret cutout.");
+            editable.SetFocus();
+            for (int i = 0; i < 30 && field.GetValue(window) == null; i++) PumpFor(100);
+            if (field.GetValue(window) == null) throw new Exception("Chrome contenteditable field did not show a caret cutout.");
+            Console.WriteLine("PASS: Chrome read-only field is ignored and contenteditable field is tracked.");
         }
         finally
         {
