@@ -187,6 +187,15 @@ internal static class Program
             var after = GetCoreColor(window);
             if (after.R != 250 || after.G != 186 || after.B != 95)
                 throw new Exception($"Temperature transition ended at wrong color: {after}");
+            var caretOption = (CheckBox)settings.FindName("ChkTextCaret");
+            caretOption.IsChecked = true;
+            string configPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinRinglight", "settings.json");
+            using (var saved = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(configPath)))
+                if (!Config.Current.TextCaretCutout || !saved.RootElement.GetProperty("TextCaretCutout").GetBoolean())
+                    throw new Exception("Caret option was not enabled and persisted.");
+            caretOption.IsChecked = false;
+            if (Config.Current.TextCaretCutout) throw new Exception("Caret option did not disable.");
+            Console.WriteLine("PASS: Text caret setting can be enabled, saved and disabled.");
             var fps = (TextBox)settings.FindName("TxtCursorFps");
             fps.Text = "90";
             fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
