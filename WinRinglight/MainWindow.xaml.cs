@@ -183,7 +183,7 @@ namespace WinRinglight
         {
             _trayIcon = new System.Windows.Forms.NotifyIcon();
 
-            var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/icon.ico"))?.Stream;
+            var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/WinRinglight;component/icon.ico"))?.Stream;
             if (iconStream != null)
             {
                 _trayIcon.Icon = new System.Drawing.Icon(iconStream);
