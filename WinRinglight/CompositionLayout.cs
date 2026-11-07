@@ -8,7 +8,7 @@ namespace WinRinglight;
 public static class CompositionLayout
 {
     public readonly record struct Display(Rectangle Bounds, Rectangle WorkingArea);
-    public readonly record struct Piece(Rectangle Viewport, Rectangle Ring);
+    public readonly record struct Piece(Rectangle Viewport, Rectangle Ring, bool ExtendLeft = false, bool ExtendRight = false);
 
     // A bounding box alone places an edge outside shorter/misaligned monitors.
     // Prefer the common band across the shorter axis when such a band exists.
@@ -44,10 +44,26 @@ public static class CompositionLayout
         if (displays.Count == 0) return Array.Empty<Piece>();
         if (spanned)
         {
-            Rectangle ring = SpannedBounds(displays);
-            if (ring.Width <= 0 || ring.Height <= 0) return Array.Empty<Piece>();
-            return displays.Where(d => d.Bounds.Width > 0 && d.Bounds.Height > 0)
-                .Select(d => new Piece(d.Bounds, ring)).ToArray();
+            var pieces = new List<Piece>();
+            for (int i = 0; i < displays.Count; i++)
+            {
+                var display = displays[i];
+                if (display.Bounds.Width <= 0 || display.Bounds.Height <= 0 ||
+                    display.WorkingArea.Width <= 0 || display.WorkingArea.Height <= 0) continue;
+                bool left = false, right = false;
+                for (int j = 0; j < displays.Count; j++)
+                {
+                    if (i == j) continue;
+                    var other = displays[j].Bounds;
+                    // Only suppress an inner side when the displays overlap
+                    // vertically; stacked displays keep their side borders.
+                    if (Math.Max(display.Bounds.Top, other.Top) >= Math.Min(display.Bounds.Bottom, other.Bottom)) continue;
+                    left |= other.Right <= display.Bounds.Left;
+                    right |= other.Left >= display.Bounds.Right;
+                }
+                pieces.Add(new Piece(display.Bounds, display.WorkingArea, left, right));
+            }
+            return pieces.ToArray();
         }
         return selected.Where(i => i >= 0 && i < displays.Count).Distinct()
             .Select(i => new Piece(displays[i].Bounds, fullscreen.Contains(i) ? displays[i].Bounds : displays[i].WorkingArea))

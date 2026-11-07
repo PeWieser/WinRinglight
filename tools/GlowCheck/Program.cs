@@ -28,9 +28,9 @@ internal static class Program
         if (fullscreen.Length != 2 || fullscreen[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea) || fullscreen[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].Bounds))
             throw new Exception("Composition fullscreen layout failed.");
         var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), new HashSet<int> { 0, 1 });
-        if (span.Length != 2 || span[0].Viewport != displays[0].Bounds || span[1].Viewport != displays[1].Bounds ||
-            span[0].Ring != System.Drawing.Rectangle.FromLTRB(-1280, 0, 1920, 840) || span[0].Ring != span[1].Ring)
-            throw new Exception("Composition spanned layout failed.");
+        if (span.Length != 2 || span[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea, false, true) ||
+            span[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].WorkingArea, true, false))
+            throw new Exception("Composition full-height spanned layout failed.");
         if (CompositionLayout.Build(displays, false, Array.Empty<int>(), new HashSet<int>()).Length != 0 ||
             CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), new HashSet<int>()).Length != 0)
             throw new Exception("Composition empty display layout failed.");
@@ -46,6 +46,10 @@ internal static class Program
         };
         if (CompositionLayout.SpannedBounds(stacked) != System.Drawing.Rectangle.FromLTRB(200, -1080, 1480, 984))
             throw new Exception("Stacked monitor common band failed.");
+        var stackedPieces = CompositionLayout.Build(stacked, true, Array.Empty<int>(), new HashSet<int>());
+        if (stackedPieces.Length != 2 || stackedPieces[0].ExtendLeft || stackedPieces[0].ExtendRight ||
+            stackedPieces[1].ExtendLeft || stackedPieces[1].ExtendRight)
+            throw new Exception("Stacked displays must retain side borders.");
         Console.WriteLine("Composition multi-monitor layout and fullscreen policy checks passed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {

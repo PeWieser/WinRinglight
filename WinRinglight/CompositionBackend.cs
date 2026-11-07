@@ -39,13 +39,16 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionRadialGradientBrush? _gradient;
     private readonly int _left, _top, _width, _height;
     private System.Drawing.Rectangle _ringBounds;
+    private readonly bool _extendLeft, _extendRight;
     private int _lastX = int.MinValue, _lastY = int.MinValue;
 
     public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
-        double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null)
+        double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null,
+        bool extendLeft = false, bool extendRight = false)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
+        _extendLeft = extendLeft; _extendRight = extendRight;
         try
         {
             EnsureDispatcherQueue();
@@ -180,9 +183,14 @@ internal sealed class CompositionBackend : IDisposable
     {
         float inset = rounded ? 20 * _dpiScale : 0;
         float radius = rounded ? Math.Min(_ringBounds.Width, _ringBounds.Height) * 0.22f : 3 * _dpiScale;
-        var offset = new Vector2(_ringBounds.Left - _left + inset + thickness / 2,
+        // Move internal side/corners entirely outside this monitor's clipped
+        // viewport, leaving straight top/bottom strokes at the seam.
+        float extension = radius + inset + thickness + 50 * _dpiScale;
+        float extraLeft = _extendLeft ? extension + Math.Max(0, _ringBounds.Left - _left) : 0;
+        float extraRight = _extendRight ? extension + Math.Max(0, _left + _width - _ringBounds.Right) : 0;
+        var offset = new Vector2(_ringBounds.Left - _left + inset + thickness / 2 - extraLeft,
                                  _ringBounds.Top - _top + inset + thickness / 2);
-        var size = new Vector2(Math.Max(0, _ringBounds.Width - inset * 2 - thickness), Math.Max(0, _ringBounds.Height - inset * 2 - thickness));
+        var size = new Vector2(Math.Max(0, _ringBounds.Width + extraLeft + extraRight - inset * 2 - thickness), Math.Max(0, _ringBounds.Height - inset * 2 - thickness));
         SetShapeGeometry(geometry, offset, size, new Vector2(radius), animate);
         float half = thickness / 2;
         if (_outerGeometry != null)

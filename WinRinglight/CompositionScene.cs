@@ -31,7 +31,7 @@ internal sealed class CompositionScene : IDisposable
                 // A single spanned ring must use one scale on all pieces or its
                 // outlines will split at a mixed-DPI monitor boundary.
                 float? sharedScale = sharedGeometry && replacements.Count > 0 ? replacements[0].DpiScale : null;
-                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale));
+                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight));
             }
         }
         catch
@@ -52,7 +52,7 @@ internal sealed class CompositionScene : IDisposable
     private bool SameViewports(CompositionLayout.Piece[] layout)
     {
         if (layout.Length != _layout.Length) return false;
-        for (int i = 0; i < layout.Length; i++) if (layout[i].Viewport != _layout[i].Viewport) return false;
+        for (int i = 0; i < layout.Length; i++) if (layout[i].Viewport != _layout[i].Viewport || layout[i].ExtendLeft != _layout[i].ExtendLeft || layout[i].ExtendRight != _layout[i].ExtendRight) return false;
         return true;
     }
 

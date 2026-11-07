@@ -298,6 +298,37 @@ internal static class Program
             SetCursorPos(beforeProbe.X, beforeProbe.Y);
         }
         else Console.WriteLine("PARTIAL: Desktop pixel probe could not position cursor.");
+        // Model different-height neighbouring monitors with no inner sides.
+        var shortRight = new System.Drawing.Rectangle(right.Left, right.Top + 40, right.Width, right.Height - 100);
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] {
+            new[] { new CompositionLayout.Piece(left, left, false, true), new CompositionLayout.Piece(right, shortRight, true, false) },
+            300f, (float)Config.Current.Thickness, true, 4000d, false, true });
+        windows = GetWindows(window);
+        var leftBackend = windows[0]!; var rightBackend = windows[1]!;
+        var gl = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)leftBackend.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(leftBackend)!;
+        var gr = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)rightBackend.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(rightBackend)!;
+        if (gl.Offset.X + gl.Size.X <= left.Width || gr.Offset.X >= 0 ||
+            gl.Offset.Y == gr.Offset.Y)
+            throw new Exception("Full-height spanned geometry has a seam border or did not respect the individual height.");
+        if (GetCursorPos(out Point savedCursor))
+        {
+            SetCursorPos(area.Left + area.Width / 2, area.Top);
+            scene.GetType().GetMethod("UpdateCursor")!.Invoke(scene, null);
+            Pump(); System.Threading.Thread.Sleep(650); DwmFlush();
+            float scale = (float)leftBackend.GetType().GetProperty("DpiScale")!.GetValue(leftBackend)!;
+            int inset = (int)(20 * scale + Config.Current.Thickness * scale / 2);
+            IntPtr dc = GetDC(IntPtr.Zero);
+            uint bottomLeft = GetPixel(dc, left.Left + left.Width / 2, left.Bottom - inset);
+            uint bottomRight = GetPixel(dc, right.Left + right.Width / 2, shortRight.Bottom - inset);
+            uint seamLeft = GetPixel(dc, left.Right - 4, area.Top + area.Height / 2);
+            uint seamRight = GetPixel(dc, right.Left + 4, area.Top + area.Height / 2);
+            ReleaseDC(IntPtr.Zero, dc);
+            static bool IsRing(uint p) => p != 0xffffffff && Math.Abs((int)(p & 255) - 246) < 16 && Math.Abs((int)((p >> 8) & 255) - 203) < 16 && Math.Abs((int)((p >> 16) & 255) - 141) < 16;
+            Console.WriteLine(IsRing(bottomLeft) && IsRing(bottomRight) && !IsRing(seamLeft) && !IsRing(seamRight)
+                ? "PASS: Different-height segments have visible bottom edges and no inner vertical ring."
+                : $"PARTIAL: Segment pixel probe inconclusive (bottom={bottomLeft:X8}/{bottomRight:X8}, seam={seamLeft:X8}/{seamRight:X8}).");
+            SetCursorPos(savedCursor.X, savedCursor.Y);
+        }
         // The same screen cursor must be mapped to each window's local coordinates.
         if (GetCursorPos(out Point original) && SetCursorPos(area.Left + area.Width / 3, area.Top + area.Height / 3) && GetCursorPos(out Point moved))
         {
