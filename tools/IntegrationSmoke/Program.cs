@@ -523,6 +523,28 @@ internal static class Program
                         }
                     ReleaseDC(IntPtr.Zero, dc);
                     errors[n] = (double)diff / samples;
+                    if (n == 0)
+                    {
+                        var grad = (Windows.UI.Composition.CompositionRadialGradientBrush)backendType.GetField("_gradient", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                        var result = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                        var masked = (Windows.UI.Composition.CompositionBrush)backendType.GetField("_maskedBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                        grad.EllipseCenter = new System.Numerics.Vector2(-1000, -1000);
+                        result.Brush = masked;
+                        Pump(); System.Threading.Thread.Sleep(500); DwmFlush();
+                        IntPtr maskDc = GetDC(IntPtr.Zero);
+                        int maxDelta = 0;
+                        for (int y = 12; y < 110; y += 4)
+                            for (int x = 12; x < 110; x += 4)
+                            {
+                                uint before = firstPixels[((y - 12) / 2) * 49 + ((x - 12) / 2)];
+                                uint after = GetPixel(maskDc, bounds.Left + x, bounds.Top + y);
+                                for (int shift = 0; shift <= 16; shift += 8)
+                                    maxDelta = Math.Max(maxDelta, Math.Abs((int)((before >> shift) & 255) - (int)((after >> shift) & 255)));
+                            }
+                        ReleaseDC(IntPtr.Zero, maskDc);
+                        if (maxDelta > 2) throw new Exception($"Unmasked ring differs visibly from fully opaque mask (max channel delta {maxDelta}).");
+                        Console.WriteLine($"PASS: Inactive direct ring matches fully opaque cursor mask (max channel delta {maxDelta}).");
+                    }
                 }
                 finally { ((IDisposable)backend).Dispose(); }
                 Pump();
