@@ -765,7 +765,12 @@ internal static class Program
                 {
                     var textPattern = (System.Windows.Automation.TextPattern)txt;
                     var sels = textPattern.GetSelection();
-                    foreach (var sel in sels) detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, offset={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, textPattern.DocumentRange, System.Windows.Automation.Text.TextPatternRangeEndpoint.Start)}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
+                    foreach (var sel in sels)
+                    {
+                        var clone = sel.Clone();
+                        int moved = clone.MoveEndpointByUnit(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, System.Windows.Automation.Text.TextUnit.Character, -1000);
+                        detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, moved={moved}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
+                    }
                 }
                 var fg = GetForegroundWindow();
                 uint tid = GetWindowThreadProcessId(fg, out _);
