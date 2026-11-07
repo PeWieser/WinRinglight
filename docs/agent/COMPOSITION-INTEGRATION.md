@@ -1,31 +1,20 @@
-# Integration von Windows Composition – Arbeitsplan
+# Integration von Windows Composition – Arbeitsplan und Status
 
 ## Ziel und Status
-Der separat getestete Prototyp (9d1c54f) wurde vom Nutzer auf einem Full-HD-Hauptmonitor getestet: Darstellung, Klickdurchleitung und Aufnahme-Ausschluss funktionieren; gemeldete GPU-Last max. ca. 9 %. Dies ist weder ein Mehrmonitor- noch ein Spiele- oder Kompatibilitätsnachweis.
+Der separat getestete Prototyp (9d1c54f) und die integrierte Ein-Monitor-Version wurden vom Nutzer auf einem Full-HD-Monitor getestet. Für die Integration wurden bei aktivem Composition unter 10 % GPU gemeldet. Dies ist weder ein Mehrmonitor- noch ein Spiele- oder Kompatibilitätsnachweis.
 
-## Leitlinien
-- Bestehende WPF-Einstellungen, Tray, Hotkey, Webcam und Konfiguration bleiben Quelle der Wahrheit. Kein Eingriff in gespeicherte Nutzerdaten.
-- Composition zunächst **freiwillig und sitzungsbezogen**, nicht automatisch als Standard. WPF bleibt Fallback, auch bei Laufzeitfehlern.
-- Sicherheitsrelevante Capture-Einstellung auf jedem neu erzeugten Overlay-HWND anwenden und Rückgabewert prüfen. Bei Fehler kein unsicheres Composition-Overlay anzeigen.
-- Ein Rendering-Backend darf nicht gleichzeitig mit dem anderen sichtbar sein. 60 FPS Cursor-Ziel, ein gemeinsamer Cursor-Takt; keine Totzone.
+Composition bleibt freiwillig, experimentell und sitzungsbezogen im Dev-Tab. Beim Start ist weiterhin WPF aktiv. Bei Initialisierungs-, Render- oder Capture-Affinity-Fehlern wird zu WPF zurückgefallen und der Status angezeigt. Capture-Ausschluss wird vor dem Anzeigen jedes neuen Composition-HWND gesetzt. 60 FPS Cursor-Ziel und keine Totzone bleiben erhalten.
 
-## Funktionsmatrix / Etappen
-1. **Grundlage und Fallback:** Backend an die bestehende App und Dev-UI anschließen. Nur ein physischer Monitor für Composition freigeben (bei einem Monitor auch gespannter Modus); andere Aufbauten bleiben auf WPF. Fehler und Umschaltung transparent anzeigen. Overlay-HWND und Composition-Objekte sicher aufräumen.
-2. **Funktionen des Ein-Monitor-Pfads:** Ring ein/aus und Fade, Farbe und 0,5-s-Übergang, beide Stile, Dicke, FPS-Einstellung, Capture-Ausschluss, Cursor-Position und Fensterposition. Tray, Hotkey und Webcam sollen unverändert dieselbe Zustandssteuerung benutzen. Taskleisten-/Vollbildwechsel und Style-Animation dürfen nicht stillschweigend verloren gehen: bis gleichwertig implementiert, in diesen Fällen WPF-Fallback.
-3. **Windows-Tests:** Build beider Projekte, automatisierte Tests für Auswahl-/Fallbacklogik und Temperatur; manuelle Tests des echten Desktop-Overlays: Klickdurchleitung, Escape/Beenden, Neustart, Capture ein/aus, Schalterwechsel, Farben, Dicke, Tastenkürzel, Webcam und Taskleiste/Vollbild. GPU/CPU/Frametimes vergleichen.
-4. **Mehrmonitor und DPI:** negative Koordinaten, ausgewählte und gespannte Displays, unterschiedliche Auflösungen und Skalierung, Hotplug. Koordinatenmodelle explizit testen. Bis dahin WPF-Fallback.
-5. **Abnahme und Standard:** Erst nach Praxistests auf mehreren Geräten, Spielen und Capture-Apps entscheiden, ob Composition als Standard aktiviert und Dev-Schalter entfernt wird.
+## Aktueller Funktionsumfang
+- Ein Composition-Fenster pro ausgewähltem Monitor; im gespannten Modus ein Fenster für die umschließende Fläche. Keine Auswahl erzeugt kein sichtbares Overlay, lässt aber den Dev-Modus aktiv.
+- Monitor-Auswahl, Vollbildzustand, Display- und DPI-Änderungen konfigurieren die Szene neu, statt Composition absichtlich zu verlassen. Display-Ereignisse werden von SystemEvents und DPI-Nachrichten ausgelöst.
+- Die Cursorposition wird in physische lokale Koordinaten jedes Overlays umgerechnet; negative Bildschirmkoordinaten sind im Layout berücksichtigt. Ringdicke und Stileinzug verwenden die DPI des jeweiligen Overlay-HWND. Der Cursor-Radius folgt der physischen Höhe des Hauptmonitors, entsprechend dem bisherigen Hauptmonitor-basierten Ansatz.
+- Farbe/Temperatur, Dicke, Cursor-Takt, Capture-Einstellung und Ein-/Ausschalten wirken auf alle Fenster. Der Stilwechsel wird mit einer Composition-Geometrieanimation umgesetzt. Tray, Hotkey und Webcam verwenden weiterhin die vorhandene Zustandssteuerung.
+- Bei Layoutänderung werden Overlay-Fenster neu erstellt. Anders als beim ursprünglichen WPF-Pfad ist die Positions-/Größenänderung dabei **nicht animiert**; eine kurze Unterbrechung oder ein Sprung ist möglich. Die gerundete Stilanimation ist nicht als pixelidentisch zum WPF-Übergang abgenommen.
+- Im gespannten Modus werden wie bisher die vereinigten Arbeitsbereiche verwendet, auch wenn die Vollbilderkennung aktiv ist. Ein gespanntes HWND hat nur eine DPI; bei unterschiedlichen Skalierungen ist seine Optik nicht als gleichwertig geprüft. Auch bei einzelmonitorigen Fenstern sind reale Misch-DPI- und Hotplug-Tests erforderlich. Der große gespannte Bereich kann hohe GPU-Speicher-/Leistungskosten verursachen.
+- Die WPF-Cache-/Glow-Experimente betreffen weiterhin nur WPF. Das Windows-SDK-Target ist `net10.0-windows10.0.19041.0` mit `SupportedOSPlatformVersion=10.0.17763.0`; Composition wird ab Windows 10 1903 versucht. Ältere Windows-Kompatibilität bleibt gesondert zu prüfen.
 
-WPF hat heute selbst Grenzfälle bei gemischter DPI; Fallback bewahrt vorhandenes Verhalten, garantiert aber nicht dessen Fehlerfreiheit. Kein Claim „alle Funktionen erhalten“, bis die obige Matrix tatsächlich getestet ist.
+## Tests und noch offene Abnahme
+Windows-Lauf 42386487654: Build und Publish von App und Prototyp sowie Glow-/Temperatur- und synthetische Mehrmonitor-Layouttests erfolgreich. Der interaktive Runner prüfte u. a. zwei Composition-HWNDs, Cursorlokalisation, Capture-Affinität und Fehlerbereinigung, Auswahl/Spannen, Stil-, Temperatur- und FPS-Einstellungen sowie eine externe Vollbild-Testanwendung mit echter Vollbilderkennung. Auch der Klick-Hit-Test an einem Punkt bestand.
 
-## Integrationsschritt 1 (experimentell)
-- Dev-Schalter aktiviert Composition nur bei Windows >= 1903, genau einem Monitor (ausgewählt oder gespannt), 100 % DPI, nicht Vollbild. Keine automatische Speicherung; Start bleibt WPF.
-- Composition erhält WPF-Cursor-Takt und -Einstellungen, Ringdicke, Stil beim Aktivieren, aktuelle und animierte Temperatur, Ein-/Aus-Animation sowie Capture-Einstellung. Bei Monitor-/Vollbildänderung oder Stilwechsel wird ausdrücklich zu WPF zurückgeschaltet, um die vorhandenen Übergänge zu bewahren; der Schalter muss danach erneut aktiviert werden. Status steht im Dev-Tab.
-- Bei Initialisierungs-, Render- oder Capture-Affinity-Fehler WPF-Fallback. Capture-Ausschluss wird vor dem Anzeigen des Composition-Fensters gesetzt. Eingeschaltete WPF-Caching-/Glow-Diagnosen betreffen weiterhin nur den WPF-Renderer.
-- Einschränkung: Mit dem Windows-SDK-Target `net10.0-windows10.0.19041.0` und `SupportedOSPlatformVersion=10.0.17763.0` ist ältere Windows-Kompatibilität ein gesonderter Abnahmepunkt. Kompatibilität älterer Windows-Versionen und Capture in realen Aufnahme-Apps sind noch nicht praktisch getestet.
-
-- Cursor-Masken und Farbe werden im Composition-Betrieb nicht länger auf dem verborgenen WPF-Overlay neu gesetzt; beim Rückfall wird WPF wieder synchronisiert. Windows-Integration-Smoke prüft Aktivierung und Rückfall, sofern ein geeigneter Desktop verfügbar ist.
-
-## Automatisierter Windows-Stand
-- Lauf 42316878568: Build und Publish beider Programme, Glow-/Temperatur- und Auswahltests erfolgreich. Der interaktive CI-Desktop bestätigte Composition-Aktivierung, Isolierung der WPF-Maske, Rückfall und Reaktivierung, Temperatur-Slider und Übergang, FPS-Modi, Fenster-Flags und einen Hit-Test sowie Setzen/Auslesen der Capture-Affinität.
-- Keine echte Aufnahme, visuelle Abnahme, GPU-/CPU-/Frametime-Messung, Webcam, Hotkey oder Mehrmonitorprüfung. Stil-, Monitor- und Vollbildänderungen bleiben bewusste WPF-Fallbacks.
+Der Runner ersetzt keine Prüfung auf echten mehreren Monitoren oder gemischter DPI, keine sichtbare Aufnahmeprüfung, kein Webcam-/Hotkey-End-to-End, keine Spieltests, keine optische Abnahme und keine GPU-/Frametime-Messung. Das tatsächliche Verhalten von exklusivem Vollbild hängt zudem von Windows und dem jeweiligen Spiel ab. Alle Funktionen als vollständig gleichwertig zu bezeichnen wäre verfrüht.
