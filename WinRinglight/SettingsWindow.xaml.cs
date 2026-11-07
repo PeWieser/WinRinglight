@@ -19,6 +19,7 @@ namespace WinRinglight
         private System.Windows.Threading.DispatcherTimer _updateTimer;
         private DateTime _lastRender = DateTime.MinValue;
         private bool _updatingCompositionControl;
+        private bool _refreshingMonitors;
 
         public SettingsWindow(MainWindow mainWindow)
         {
@@ -85,6 +86,7 @@ namespace WinRinglight
             SliderTemperature.Value = Config.Current.Temperature;
 
             LoadMonitors();
+            _mainWindow.DisplaysChanged += DisplaysChanged;
             
 
             this.Title = Config.GetText("AppName") + " - " + Config.GetText("SettingsMenu");
@@ -111,8 +113,16 @@ namespace WinRinglight
             public bool IsSelected { get; set; }
         }
 
+        private void DisplaysChanged(object? sender, EventArgs e)
+        {
+            if (IsLoaded) LoadMonitors();
+        }
+
         private void LoadMonitors()
         {
+            _refreshingMonitors = true;
+            try
+            {
             var monitorList = new System.Collections.Generic.List<MonitorItem>();
             var screens = System.Windows.Forms.Screen.AllScreens;
 
@@ -127,11 +137,13 @@ namespace WinRinglight
             }
             MonitorItemsControl.ItemsSource = monitorList;
             ChkSpanAll.IsChecked = Config.Current.IsSpanned;
+            }
+            finally { _refreshingMonitors = false; }
         }
 
         private void MonitorBox_Changed(object sender, RoutedEventArgs e)
         {
-            if (!this.IsLoaded) return;
+            if (!this.IsLoaded || _refreshingMonitors) return;
 
             var checkbox = sender as System.Windows.Controls.CheckBox;
             var item = checkbox?.DataContext as MonitorItem;
@@ -153,7 +165,7 @@ namespace WinRinglight
 
         private void ChkSpanAll_Changed(object sender, RoutedEventArgs e)
         {
-            if (!this.IsLoaded) return;
+            if (!this.IsLoaded || _refreshingMonitors) return;
             Config.Current.IsSpanned = ChkSpanAll.IsChecked == true;
             _mainWindow.UpdateMonitorSetup();
             Config.Save();
@@ -458,6 +470,7 @@ namespace WinRinglight
         {
             Config.Save();
             _mainWindow.DevCompositionChanged -= CompositionStateChanged;
+            _mainWindow.DisplaysChanged -= DisplaysChanged;
             base.OnClosed(e);
         }
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Collections.Generic;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
@@ -20,20 +21,32 @@ internal static class Program
             new CompositionLayout.Display(new System.Drawing.Rectangle(-1280, 0, 1280, 1024), new System.Drawing.Rectangle(-1280, 0, 1280, 984)),
             new CompositionLayout.Display(new System.Drawing.Rectangle(0, -200, 1920, 1080), new System.Drawing.Rectangle(0, -200, 1920, 1040))
         };
-        var individual = CompositionLayout.Build(displays, false, new[] { 1, 0, 1, -1, 4 }, false);
+        var individual = CompositionLayout.Build(displays, false, new[] { 1, 0, 1, -1, 4 }, new HashSet<int>());
         if (individual.Length != 2 || individual[0] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].WorkingArea) || individual[1] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea))
             throw new Exception("Composition selected-monitor layout failed.");
-        var fullscreen = CompositionLayout.Build(displays, false, new[] { 0, 1 }, true);
-        if (fullscreen.Length != 2 || fullscreen[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].Bounds) || fullscreen[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].Bounds))
+        var fullscreen = CompositionLayout.Build(displays, false, new[] { 0, 1 }, new HashSet<int> { 1 });
+        if (fullscreen.Length != 2 || fullscreen[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea) || fullscreen[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].Bounds))
             throw new Exception("Composition fullscreen layout failed.");
-        var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), true);
+        var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), new HashSet<int> { 0, 1 });
         if (span.Length != 2 || span[0].Viewport != displays[0].Bounds || span[1].Viewport != displays[1].Bounds ||
-            span[0].Ring != System.Drawing.Rectangle.Union(displays[0].WorkingArea, displays[1].WorkingArea) || span[0].Ring != span[1].Ring)
+            span[0].Ring != System.Drawing.Rectangle.FromLTRB(-1280, 0, 1920, 840) || span[0].Ring != span[1].Ring)
             throw new Exception("Composition spanned layout failed.");
-        if (CompositionLayout.Build(displays, false, Array.Empty<int>(), false).Length != 0 ||
-            CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), false).Length != 0)
+        if (CompositionLayout.Build(displays, false, Array.Empty<int>(), new HashSet<int>()).Length != 0 ||
+            CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), new HashSet<int>()).Length != 0)
             throw new Exception("Composition empty display layout failed.");
-        Console.WriteLine("Composition multi-monitor layout checks passed.");
+        var z = new[] { new FullscreenPolicy.Entry(0, false), new FullscreenPolicy.Entry(1, true),
+            new FullscreenPolicy.Entry(1, false), new FullscreenPolicy.Entry(0, true) };
+        var states = FullscreenPolicy.Detect(2, z, null);
+        if (!states.SetEquals(new[] { 0 }) || FullscreenPolicy.Detect(2, z, 0).Count != 0 ||
+            !FullscreenPolicy.Detect(2, new[] { new FullscreenPolicy.Entry(1, false) }, 0).SetEquals(new[] { 1 }))
+            throw new Exception("Per-monitor fullscreen z-order policy failed.");
+        var stacked = new[] {
+            new CompositionLayout.Display(new System.Drawing.Rectangle(0, -1080, 1920, 1080), new System.Drawing.Rectangle(0, -1080, 1920, 1080)),
+            new CompositionLayout.Display(new System.Drawing.Rectangle(200, 0, 1280, 1024), new System.Drawing.Rectangle(200, 0, 1280, 984))
+        };
+        if (CompositionLayout.SpannedBounds(stacked) != System.Drawing.Rectangle.FromLTRB(200, -1080, 1480, 984))
+            throw new Exception("Stacked monitor common band failed.");
+        Console.WriteLine("Composition multi-monitor layout and fullscreen policy checks passed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {
             var halo = new GlowBorder { Width = 320, Height = 200,

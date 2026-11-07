@@ -30,6 +30,7 @@ internal sealed class CompositionBackend : IDisposable
     private float _dpiScale = 1;
     public float DpiScale => _dpiScale;
     private CompositionRoundedRectangleGeometry? _geometry;
+    private CompositionRoundedRectangleGeometry? _outerGeometry, _innerGeometry;
     private bool _currentRounded;
     private IntPtr _hwnd;
     private Compositor? _compositor;
@@ -131,6 +132,8 @@ internal sealed class CompositionBackend : IDisposable
         _ringObjects.Clear();
         var geometry = KeepRing(_compositor.CreateRoundedRectangleGeometry());
         _geometry = geometry;
+        _outerGeometry = KeepRing(_compositor.CreateRoundedRectangleGeometry());
+        _innerGeometry = KeepRing(_compositor.CreateRoundedRectangleGeometry());
         SetGeometry(geometry, thickness, rounded, false);
         var color = ToColor(kelvin);
         float blur = Math.Min(40, thickness * 0.4f);
@@ -141,10 +144,15 @@ internal sealed class CompositionBackend : IDisposable
             byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75));
             var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)));
             _haloBrushes.Add(brush);
-            var shape = KeepRing(_compositor.CreateSpriteShape(geometry));
-            shape.StrokeBrush = brush;
-            shape.StrokeThickness = thickness + 2 * blur * fraction;
-            _ring.Shapes.Add(shape);
+            // Shade only the two visible edges instead of repainting the full
+            // thick ring for every halo layer during a style animation.
+            foreach (var contour in new[] { _outerGeometry, _innerGeometry })
+            {
+                var shape = KeepRing(_compositor.CreateSpriteShape(contour));
+                shape.StrokeBrush = brush;
+                shape.StrokeThickness = 2 * blur * fraction;
+                _ring.Shapes.Add(shape);
+            }
         }
         // Subpixel-width, translucent skirts soften the rasterised inner and
         // outer edge of the solid stroke without supersampling a full monitor
@@ -153,10 +161,13 @@ internal sealed class CompositionBackend : IDisposable
         {
             var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(edge.alpha, color.R, color.G, color.B)));
             _haloBrushes.Add(brush);
-            var shape = KeepRing(_compositor.CreateSpriteShape(geometry));
-            shape.StrokeBrush = brush;
-            shape.StrokeThickness = thickness + edge.spread * _dpiScale;
-            _ring.Shapes.Add(shape);
+            foreach (var contour in new[] { _outerGeometry, _innerGeometry })
+            {
+                var shape = KeepRing(_compositor.CreateSpriteShape(contour));
+                shape.StrokeBrush = brush;
+                shape.StrokeThickness = edge.spread * _dpiScale;
+                _ring.Shapes.Add(shape);
+            }
         }
         var core = KeepRing(_compositor.CreateSpriteShape(geometry));
         _coreBrush = KeepRing(_compositor.CreateColorBrush(color));
@@ -172,6 +183,18 @@ internal sealed class CompositionBackend : IDisposable
         var offset = new Vector2(_ringBounds.Left - _left + inset + thickness / 2,
                                  _ringBounds.Top - _top + inset + thickness / 2);
         var size = new Vector2(Math.Max(0, _ringBounds.Width - inset * 2 - thickness), Math.Max(0, _ringBounds.Height - inset * 2 - thickness));
+        SetShapeGeometry(geometry, offset, size, new Vector2(radius), animate);
+        float half = thickness / 2;
+        if (_outerGeometry != null)
+            SetShapeGeometry(_outerGeometry, offset - new Vector2(half), size + new Vector2(thickness), new Vector2(radius + half), animate);
+        if (_innerGeometry != null)
+            SetShapeGeometry(_innerGeometry, offset + new Vector2(half),
+                new Vector2(Math.Max(0, size.X - thickness), Math.Max(0, size.Y - thickness)),
+                new Vector2(Math.Max(0, radius - half)), animate);
+    }
+
+    private void SetShapeGeometry(CompositionRoundedRectangleGeometry geometry, Vector2 offset, Vector2 size, Vector2 radius, bool animate)
+    {
         if (!animate || _compositor == null)
         {
             geometry.Offset = offset;
@@ -182,8 +205,7 @@ internal sealed class CompositionBackend : IDisposable
             AnimateVector(geometry, "Offset", offset);
             AnimateVector(geometry, "Size", size);
         }
-        // The original WPF corner radius changes immediately on a style switch.
-        geometry.CornerRadius = new Vector2(radius);
+        geometry.CornerRadius = radius;
     }
 
     public void SetLayout(System.Drawing.Rectangle ringBounds, bool animate)
@@ -195,8 +217,12 @@ internal sealed class CompositionBackend : IDisposable
             // WPF only changes the corner radius on style changes, not during
             // a working-area/fullscreen layout transition.
             Vector2 oldRadius = _geometry.CornerRadius;
+            Vector2 oldOuterRadius = _outerGeometry?.CornerRadius ?? default;
+            Vector2 oldInnerRadius = _innerGeometry?.CornerRadius ?? default;
             SetGeometry(_geometry, (float)_currentThickness, _currentRounded, animate);
             _geometry.CornerRadius = oldRadius;
+            if (_outerGeometry != null) _outerGeometry.CornerRadius = oldOuterRadius;
+            if (_innerGeometry != null) _innerGeometry.CornerRadius = oldInnerRadius;
         }
     }
 
@@ -279,7 +305,7 @@ internal sealed class CompositionBackend : IDisposable
             _ringObjects.Clear();
             for (int i = _objects.Count - 1; i >= 0; i--) DisposeSafely(_objects[i]);
             _objects.Clear();
-            _gradient = null; _ring = null; _result = null; _geometry = null;
+            _gradient = null; _ring = null; _result = null; _geometry = null; _outerGeometry = null; _innerGeometry = null;
             _haloBrushes.Clear(); _coreBrush = null;
             if (_compositor != null) DisposeSafely(_compositor);
             _compositor = null;

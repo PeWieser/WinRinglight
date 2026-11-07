@@ -182,6 +182,14 @@ internal static class Program
                 throw new Exception("Composition style did not change.");
             style.SelectedIndex = 0;
             if (!window.DevCompositionActive) throw new Exception("Style change back caused fallback.");
+            var monitorItems = (ItemsControl)settings.FindName("MonitorItemsControl");
+            object? sourceBefore = monitorItems.ItemsSource;
+            int selectionCount = Config.Current.SelectedMonitors.Count;
+            typeof(MainWindow).GetMethod("DisplaySettingsChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object?[] { null, EventArgs.Empty });
+            Pump();
+            if (ReferenceEquals(sourceBefore, monitorItems.ItemsSource) || monitorItems.Items.Count != System.Windows.Forms.Screen.AllScreens.Length || Config.Current.SelectedMonitors.Count != selectionCount)
+                throw new Exception("Open settings did not refresh monitors or changed the saved selection.");
+            Console.WriteLine("PASS: Open settings refreshes monitor list on a display event without changing selection.");
             Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor FPS and style changes.");
         }
         finally { settings.Close(); }
@@ -212,12 +220,12 @@ internal static class Program
 
     private static void TestLayouts(MainWindow window, System.Windows.Forms.Screen[] screens)
     {
-        var fullscreenField = typeof(MainWindow).GetField("_isFullscreenActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        fullscreenField.SetValue(window, true);
+        var fullscreenSet = (System.Collections.Generic.HashSet<string>)typeof(MainWindow).GetField("_fullscreenMonitors", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        fullscreenSet.Add(screens[0].DeviceName);
         window.UpdateMonitorSetup();
         AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
         if (!window.DevCompositionActive) throw new Exception("Fullscreen caused fallback.");
-        fullscreenField.SetValue(window, false);
+        fullscreenSet.Clear();
         window.UpdateMonitorSetup();
         AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
         Config.Current.IsSpanned = true;
@@ -306,21 +314,21 @@ internal static class Program
         }
         using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--fullscreen-fixture")
         { UseShellExecute = false, CreateNoWindow = true }) ?? throw new Exception("Could not start fullscreen fixture.");
-        var field = typeof(MainWindow).GetField("_isFullscreenActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var fullscreenSet = (System.Collections.Generic.HashSet<string>)typeof(MainWindow).GetField("_fullscreenMonitors", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         try
         {
-            for (int i = 0; i < 30 && !(bool)field.GetValue(window)!; i++)
+            for (int i = 0; i < 30 && !fullscreenSet.Contains(screens[0].DeviceName); i++)
             {
                 if (process.HasExited) throw new Exception("Fullscreen fixture exited unexpectedly.");
                 PumpFor(100);
             }
-            if (!(bool)field.GetValue(window)! || !window.DevCompositionActive)
+            if (!fullscreenSet.Contains(screens[0].DeviceName) || !window.DevCompositionActive)
                 throw new Exception("Fullscreen detector did not activate Composition fullscreen layout.");
             AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
             process.Kill();
             process.WaitForExit();
-            for (int i = 0; i < 30 && (bool)field.GetValue(window)!; i++) PumpFor(100);
-            if ((bool)field.GetValue(window)! || !window.DevCompositionActive)
+            for (int i = 0; i < 30 && fullscreenSet.Contains(screens[0].DeviceName); i++) PumpFor(100);
+            if (fullscreenSet.Contains(screens[0].DeviceName) || !window.DevCompositionActive)
                 throw new Exception("Fullscreen detector did not restore Composition working area.");
             AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
             Console.WriteLine("PASS: External fullscreen window triggers real detector and restores working area.");

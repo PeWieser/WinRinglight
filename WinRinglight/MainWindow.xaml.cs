@@ -97,7 +97,8 @@ namespace WinRinglight
         }
 
         private DispatcherTimer? _fullscreenTimer;
-        private bool _isFullscreenActive = false;
+        private readonly System.Collections.Generic.HashSet<string> _fullscreenMonitors = new();
+        public event EventHandler? DisplaysChanged;
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct Win32Point { public Int32 X; public Int32 Y; }
@@ -265,7 +266,7 @@ namespace WinRinglight
         private void DisplaySettingsChanged(object? sender, EventArgs e)
         {
             if (!Dispatcher.HasShutdownStarted)
-                Dispatcher.BeginInvoke(new Action(() => { if (IsLoaded) { _compositionBackend?.InvalidateLayout(); UpdateMonitorSetup(); } }));
+                Dispatcher.BeginInvoke(new Action(() => { if (IsLoaded) { _compositionBackend?.InvalidateLayout(); UpdateMonitorSetup(); DisplaysChanged?.Invoke(this, EventArgs.Empty); } }));
         }
 
         public void FlushMemory()
@@ -436,95 +437,60 @@ namespace WinRinglight
         {
             if (!_isRinglightOn) return;
 
-            bool isFullscreenNow = false;
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var entries = new System.Collections.Generic.List<FullscreenPolicy.Entry>();
             IntPtr currentHwnd = GetTopWindow(IntPtr.Zero);
-
-            // Eigene Prozess-ID
             uint myPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-
-            // --- STUFE 1: DIE Z-ORDER SCHLEIFE ---
             while (currentHwnd != IntPtr.Zero)
             {
-                System.Text.StringBuilder className = new System.Text.StringBuilder(256);
-                GetClassName(currentHwnd, className, className.Capacity);
-                string cName = className.ToString();
-
-                // Wenn wir die Taskleiste (Haupt oder Nebenmonitor) VOR einem Vollbild-Spiel finden:
-                // -> Die Taskleiste ist sichtbar! Abbruch.
-                if (cName == "Shell_TrayWnd" || cName == "Shell_SecondaryTrayWnd")
+                var name = new System.Text.StringBuilder(256);
+                GetClassName(currentHwnd, name, name.Capacity);
+                string cName = name.ToString();
+                bool taskbar = cName == "Shell_TrayWnd" || cName == "Shell_SecondaryTrayWnd";
+                GetWindowThreadProcessId(currentHwnd, out uint pid);
+                if (taskbar)
                 {
-                    isFullscreenNow = false;
-                    break;
+                    var monitor = System.Windows.Forms.Screen.FromHandle(currentHwnd);
+                    int index = Array.FindIndex(screens, x => x.DeviceName == monitor.DeviceName);
+                    entries.Add(new FullscreenPolicy.Entry(index, true));
                 }
-
-                // Uns selbst ignorieren
-                GetWindowThreadProcessId(currentHwnd, out uint windowPid);
-                if (windowPid == myPid)
-                {
-                    currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
-                    continue;
-                }
-
-                if (IsWindowVisible(currentHwnd))
+                else if (pid != myPid && IsWindowVisible(currentHwnd) && cName != "Progman" && cName != "WorkerW" && cName != "EdgeUiInputTopWnd")
                 {
                     DwmGetWindowAttribute(currentHwnd, DWMWA_CLOAKED, out int cloaked, 4);
-
-                    if (cloaked == 0)
+                    int style = GetWindowLong(currentHwnd, GWL_EXSTYLE);
+                    if (cloaked == 0 && (style & (WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT)) == 0 && GetWindowRect(currentHwnd, out RECT rect))
                     {
-                        int exStyle = GetWindowLong(currentHwnd, GWL_EXSTYLE);
-                        bool isToolWindow = (exStyle & WS_EX_TOOLWINDOW) != 0;
-                        bool isTransparent = (exStyle & WS_EX_TRANSPARENT) != 0;
-
-                        if (!isToolWindow && !isTransparent)
+                        for (int i = 0; i < screens.Length; i++)
                         {
-                            // Desktop-Elemente ignorieren
-                            if (cName != "Progman" && cName != "WorkerW" && cName != "EdgeUiInputTopWnd")
-                            {
-                                GetWindowRect(currentHwnd, out RECT appRect);
-                                var screen = System.Windows.Forms.Screen.FromHandle(currentHwnd);
-
-                                int w = appRect.Right - appRect.Left;
-                                int h = appRect.Bottom - appRect.Top;
-
-                                // Ist es ein ECHTES Vollbild-Fenster (Monitor Bounds)?
-                                if (w >= screen.Bounds.Width - 5 && h >= screen.Bounds.Height - 5)
-                                {
-                                    // Wir haben ein Vollbild gefunden, das die Taskleiste verdeckt!
-                                    isFullscreenNow = true;
-                                    break;
-                                }
-                            }
+                            var b = screens[i].Bounds;
+                            if (rect.Left <= b.Left + 5 && rect.Top <= b.Top + 5 && rect.Right >= b.Right - 5 && rect.Bottom >= b.Bottom - 5)
+                                entries.Add(new FullscreenPolicy.Entry(i, false));
                         }
                     }
                 }
                 currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
             }
-
-            // --- STUFE 2: DER STARTMENÜ-OVERRIDE (Deine Beobachtung!) ---
-            // Wir prüfen das Fenster, in dem der Cursor gerade blinkt.
-            IntPtr fgHwnd = GetForegroundWindow();
-            System.Text.StringBuilder fgClass = new System.Text.StringBuilder(256);
-            GetClassName(fgHwnd, fgClass, fgClass.Capacity);
-            string fgName = fgClass.ToString();
-
-            // Wenn der Nutzer Win oder Win+S gedrückt hat, ist eines dieser Overlays aktiv:
-            if (fgName == "Windows.UI.Core.CoreWindow" || // Windows 10 Startmenü / Suche
-                fgName == "StartMenuExperienceHost" ||    // Windows 11 Startmenü
-                fgName == "SearchHost" ||                 // Windows 11 Suche
-                fgName == "Shell_TrayWnd")                // Taskleiste wurde angeklickt
+            IntPtr foreground = GetForegroundWindow();
+            var fgName = new System.Text.StringBuilder(256);
+            GetClassName(foreground, fgName, fgName.Capacity);
+            string fgClass = fgName.ToString();
+            int? shellMonitor = null;
+            if (fgClass == "Windows.UI.Core.CoreWindow" || fgClass == "StartMenuExperienceHost" ||
+                fgClass == "SearchHost" || fgClass == "Shell_TrayWnd" || fgClass == "Shell_SecondaryTrayWnd")
             {
-                // Egal was das Spiel im Hintergrund macht: Taskleiste freimachen!
-                isFullscreenNow = false;
+                var screen = System.Windows.Forms.Screen.FromHandle(foreground);
+                shellMonitor = Array.FindIndex(screens, x => x.DeviceName == screen.DeviceName);
             }
-
-            // Wenn sich der Status geändert hat -> Animieren!
-            if (isFullscreenNow != _isFullscreenActive)
+            var indices = FullscreenPolicy.Detect(screens.Length, entries, shellMonitor);
+            var names = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (int index in indices) names.Add(screens[index].DeviceName);
+            if (!_fullscreenMonitors.SetEquals(names))
             {
-                _isFullscreenActive = isFullscreenNow;
+                _fullscreenMonitors.Clear();
+                _fullscreenMonitors.UnionWith(names);
                 UpdateMonitorSetup();
             }
         }
-
 
         private void StopCursorTracking()
         {
@@ -677,7 +643,9 @@ namespace WinRinglight
             var displays = new CompositionLayout.Display[screens.Length];
             for (int i = 0; i < screens.Length; i++)
                 displays[i] = new CompositionLayout.Display(screens[i].Bounds, screens[i].WorkingArea);
-            var layout = CompositionLayout.Build(displays, Config.Current.IsSpanned, Config.Current.SelectedMonitors, _isFullscreenActive);
+            var fullscreen = new System.Collections.Generic.HashSet<int>();
+            for (int i = 0; i < screens.Length; i++) if (_fullscreenMonitors.Contains(screens[i].DeviceName)) fullscreen.Add(i);
+            var layout = CompositionLayout.Build(displays, Config.Current.IsSpanned, Config.Current.SelectedMonitors, fullscreen);
             var primary = System.Windows.Forms.Screen.PrimaryScreen;
             float radius = (float)((primary?.Bounds.Height ?? 0) * Config.CursorCutoutRadiusPercent);
             _compositionBackend.Configure(layout, radius, (float)Config.Current.Thickness,
@@ -737,24 +705,14 @@ namespace WinRinglight
 
             if (Config.Current.IsSpanned)
             {
-                double minX = double.MaxValue, minY = double.MaxValue;
-                double maxX = double.MinValue, maxY = double.MinValue;
-
-                foreach (var screen in System.Windows.Forms.Screen.AllScreens)
-                {
-                    var wa = screen.WorkingArea;
-                    if (wa.Left < minX) minX = wa.Left;
-                    if (wa.Top < minY) minY = wa.Top;
-                    if (wa.Right > maxX) maxX = wa.Right;
-                    if (wa.Bottom > maxY) maxY = wa.Bottom;
-                }
-
-                double spanW = maxX - minX;
-                double spanH = maxY - minY;
-                double relX = minX - SystemParameters.VirtualScreenLeft;
-                double relY = minY - SystemParameters.VirtualScreenTop;
-
-                targetRects.Add(new Rect(relX, relY, spanW, spanH));
+                var screens = System.Windows.Forms.Screen.AllScreens;
+                var displays = new CompositionLayout.Display[screens.Length];
+                for (int i = 0; i < screens.Length; i++)
+                    displays[i] = new CompositionLayout.Display(screens[i].Bounds, screens[i].WorkingArea);
+                var span = CompositionLayout.SpannedBounds(displays);
+                if (span.Width > 0 && span.Height > 0)
+                    targetRects.Add(new Rect(span.Left - SystemParameters.VirtualScreenLeft,
+                        span.Top - SystemParameters.VirtualScreenTop, span.Width, span.Height));
             }
             else
             {
@@ -764,7 +722,7 @@ namespace WinRinglight
                     if (index >= 0 && index < screens.Length)
                     {
                         var s = screens[index];
-                        var rect = _isFullscreenActive ? s.Bounds : s.WorkingArea;
+                        var rect = _fullscreenMonitors.Contains(s.DeviceName) ? s.Bounds : s.WorkingArea;
 
                         double relX = rect.X - SystemParameters.VirtualScreenLeft;
                         double relY = rect.Y - SystemParameters.VirtualScreenTop;
