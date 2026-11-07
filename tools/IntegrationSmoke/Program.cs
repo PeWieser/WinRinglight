@@ -445,6 +445,8 @@ internal static class Program
             background.Show(); PumpFor(150);
             SetCursorPos(screen.WorkingArea.Right - 1, screen.WorkingArea.Bottom - 1);
             double[] errors = new double[2];
+            var firstPixels = new System.Collections.Generic.List<uint>();
+            int changedPixels = 0;
             for (int n = 0; n < 2; n++)
             {
                 object backend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
@@ -460,12 +462,15 @@ internal static class Program
                         Console.WriteLine($"PARTIAL: Raster comparison desktop probe unavailable (core=0x{core:X8}).");
                         return;
                     }
-                    long diff = 0; int samples = 0;
+                    long diff = 0; int samples = 0; int sampleIndex = 0;
                     for (int y = 12; y < 110; y += 2)
                         for (int x = 12; x < 110; x += 2)
                         {
                             int i = (y * width + x) * 4;
                             uint observed = GetPixel(dc, bounds.Left + x, bounds.Top + y);
+                            if (n == 0) firstPixels.Add(observed);
+                            else if (firstPixels[sampleIndex] != observed) changedPixels++;
+                            sampleIndex++;
                             diff += Math.Abs((int)(observed & 255) - pixels[i + 2]);
                             diff += Math.Abs((int)((observed >> 8) & 255) - pixels[i + 1]);
                             diff += Math.Abs((int)((observed >> 16) & 255) - pixels[i]);
@@ -477,9 +482,9 @@ internal static class Program
                 finally { ((IDisposable)backend).Dispose(); }
                 Pump();
             }
-            Console.WriteLine(errors[1] <= errors[0]
-                ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F3}, 2x error={errors[1]:F3}."
-                : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F3}, 2x error={errors[1]:F3}; 2x not closer in this probe.");
+            Console.WriteLine(errors[1] < errors[0] && changedPixels > 0
+                ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}."
+                : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}; improvement not established.");
         }
         finally
         {
