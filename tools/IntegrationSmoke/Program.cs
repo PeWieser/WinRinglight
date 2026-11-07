@@ -730,6 +730,29 @@ internal static class Program
         foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
         Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
         var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        string? firefox = new[] {
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe"),
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Mozilla Firefox", "firefox.exe")
+        }.FirstOrDefault(System.IO.File.Exists);
+        string ffProfile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "winringlight-firefox-" + Guid.NewGuid().ToString("N"));
+        System.Diagnostics.Process? ff = null;
+        if (firefox != null)
+        {
+            System.IO.Directory.CreateDirectory(ffProfile);
+            var ffStart = new System.Diagnostics.ProcessStartInfo(firefox) { UseShellExecute = false };
+            foreach (var arg in new[] { "--no-remote", "--new-instance", "--profile", ffProfile, "--new-window", "about:blank" }) ffStart.ArgumentList.Add(arg);
+            ff = System.Diagnostics.Process.Start(ffStart);
+            if (ff == null) throw new Exception("Could not launch Firefox fixture.");
+            for (int i = 0; i < 120 && !ff.HasExited; i++) { ff.Refresh(); if (ff.MainWindowHandle != IntPtr.Zero) break; PumpFor(100); }
+            ff.Refresh();
+            if (ff.HasExited || ff.MainWindowHandle == IntPtr.Zero) throw new Exception("Firefox fixture did not open a window.");
+            SetForegroundWindow(ff.MainWindowHandle); PumpFor(600);
+            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(300);
+            for (int i = 0; i < 8; i++) { Key(0x41, true); Key(0x41, false); PumpFor(40); }
+            for (int i = 0; i < 30 && field.GetValue(window) == null; i++) PumpFor(100);
+            if (field.GetValue(window) == null) throw new Exception("Firefox address caret not detected before browser switch.");
+        }
+        else Console.WriteLine("SKIP: Firefox not installed; Firefox-to-Chrome needs real-device testing.");
         using var process = System.Diagnostics.Process.Start(start) ?? throw new Exception("Could not launch Chrome fixture.");
         try
         {
@@ -782,11 +805,15 @@ internal static class Program
             }
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
-            Console.WriteLine("PASS: Chrome address bar caret tracks Home/End and remains visible for selected text.");
+            Console.WriteLine("PASS: Chrome address bar caret tracks start/end and remains visible for selected text.");
+            if (ff != null) Console.WriteLine("PASS: Chrome address caret detected after switching directly from Firefox with its text field focused.");
         }
         finally
         {
             try { if (!process.HasExited) { process.Kill(true); process.WaitForExit(); } } catch { }
+            try { if (ff != null && !ff.HasExited) { ff.Kill(true); ff.WaitForExit(); } } catch { }
+            ff?.Dispose();
+            try { System.IO.Directory.Delete(ffProfile, true); } catch { }
             Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
             try { System.IO.Directory.Delete(profile, true); } catch { }
         }

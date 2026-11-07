@@ -60,9 +60,10 @@ internal sealed class CaretTracker : IDisposable
         long lastQuery = 0;
         while (!_disposed)
         {
-            // Event-driven in normal operation. A slow fallback check covers
-            // applications that do not send accessibility notifications.
-            _wake.WaitOne(50);
+            // Accessibility events wake the worker immediately. Some browsers do
+            // not emit reliable caret notifications, so sample at the chosen
+            // cursor rate too; unchanged positions never invalidate a mask.
+            _wake.WaitOne(_intervalMs == 0 ? 16 : _intervalMs);
             if (_enabled)
             {
                 double elapsed = lastQuery == 0 ? double.MaxValue : Stopwatch.GetElapsedTime(lastQuery).TotalMilliseconds;
@@ -105,7 +106,7 @@ internal sealed class CaretTracker : IDisposable
 
     private void Expire()
     {
-        if ((_sampleForeground != GetForegroundWindow() || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromSeconds(1)) && _lastPoint != null)
+        if ((_sampleForeground != GetForegroundWindow() || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromMilliseconds(Math.Max(1000, _intervalMs * 3 + 100))) && _lastPoint != null)
         {
             Interlocked.Increment(ref _refreshVersion);
             Publish(null);
