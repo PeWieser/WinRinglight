@@ -8,18 +8,23 @@ namespace WinRinglight;
 internal sealed class CompositionScene : IDisposable
 {
     private readonly List<CompositionBackend> _windows = new();
-    private Rectangle[] _layout = Array.Empty<Rectangle>();
+    private CompositionLayout.Piece[] _layout = Array.Empty<CompositionLayout.Piece>();
     private float _cursorRadius;
 
-    public void Configure(Rectangle[] layout, float cursorRadius, float thickness, bool rounded,
+    public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible)
     {
-        if (SameLayout(layout) && _cursorRadius == cursorRadius) return;
+        if (SameViewports(layout) && _cursorRadius == cursorRadius)
+        {
+            for (int i = 0; i < layout.Length; i++) _windows[i].SetLayout(layout[i].Ring, true);
+            _layout = (CompositionLayout.Piece[])layout.Clone();
+            return;
+        }
         var replacements = new List<CompositionBackend>();
         try
         {
-            foreach (var bounds in layout)
-                replacements.Add(new CompositionBackend(bounds, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius));
+            foreach (var piece in layout)
+                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius));
         }
         catch
         {
@@ -29,16 +34,16 @@ internal sealed class CompositionScene : IDisposable
         foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
         _windows.AddRange(replacements);
-        _layout = (Rectangle[])layout.Clone();
+        _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
     }
 
     public void InvalidateLayout() => _cursorRadius = -1;
 
-    private bool SameLayout(Rectangle[] layout)
+    private bool SameViewports(CompositionLayout.Piece[] layout)
     {
         if (layout.Length != _layout.Length) return false;
-        for (int i = 0; i < layout.Length; i++) if (layout[i] != _layout[i]) return false;
+        for (int i = 0; i < layout.Length; i++) if (layout[i].Viewport != _layout[i].Viewport) return false;
         return true;
     }
 
@@ -65,6 +70,6 @@ internal sealed class CompositionScene : IDisposable
     {
         foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
-        _layout = Array.Empty<Rectangle>();
+        _layout = Array.Empty<CompositionLayout.Piece>();
     }
 }

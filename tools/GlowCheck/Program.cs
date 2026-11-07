@@ -21,13 +21,14 @@ internal static class Program
             new CompositionLayout.Display(new System.Drawing.Rectangle(0, -200, 1920, 1080), new System.Drawing.Rectangle(0, -200, 1920, 1040))
         };
         var individual = CompositionLayout.Build(displays, false, new[] { 1, 0, 1, -1, 4 }, false);
-        if (individual.Length != 2 || individual[0] != displays[1].WorkingArea || individual[1] != displays[0].WorkingArea)
+        if (individual.Length != 2 || individual[0] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].WorkingArea) || individual[1] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea))
             throw new Exception("Composition selected-monitor layout failed.");
         var fullscreen = CompositionLayout.Build(displays, false, new[] { 0, 1 }, true);
-        if (fullscreen.Length != 2 || fullscreen[0] != displays[0].Bounds || fullscreen[1] != displays[1].Bounds)
+        if (fullscreen.Length != 2 || fullscreen[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].Bounds) || fullscreen[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].Bounds))
             throw new Exception("Composition fullscreen layout failed.");
         var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), true);
-        if (span.Length != 1 || span[0] != System.Drawing.Rectangle.Union(displays[0].WorkingArea, displays[1].WorkingArea))
+        if (span.Length != 2 || span[0].Viewport != displays[0].Bounds || span[1].Viewport != displays[1].Bounds ||
+            span[0].Ring != System.Drawing.Rectangle.Union(displays[0].WorkingArea, displays[1].WorkingArea) || span[0].Ring != span[1].Ring)
             throw new Exception("Composition spanned layout failed.");
         if (CompositionLayout.Build(displays, false, Array.Empty<int>(), false).Length != 0 ||
             CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), false).Length != 0)

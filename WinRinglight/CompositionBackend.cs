@@ -36,12 +36,14 @@ internal sealed class CompositionBackend : IDisposable
     private ShapeVisual? _ring;
     private CompositionRadialGradientBrush? _gradient;
     private readonly int _left, _top, _width, _height;
+    private System.Drawing.Rectangle _ringBounds;
     private int _lastX = int.MinValue, _lastY = int.MinValue;
 
-    public CompositionBackend(System.Drawing.Rectangle bounds, float thickness, bool rounded,
+    public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible, float cursorRadius)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
+        _ringBounds = ringBounds;
         try
         {
             EnsureDispatcherQueue();
@@ -131,10 +133,13 @@ internal sealed class CompositionBackend : IDisposable
         SetGeometry(geometry, thickness, rounded, false);
         var color = ToColor(kelvin);
         float blur = Math.Min(40, thickness * 0.4f);
-        for (int i = 12; i >= 1; i--)
+        // More finely spaced contours reduce visible banding while keeping
+        // approximately the same total halo opacity as the original 12 layers.
+        const int layers = 24;
+        for (int i = layers; i >= 1; i--)
         {
-            float fraction = i / 12f;
-            byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75));
+            float fraction = (float)i / layers;
+            byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75) * 12 / layers);
             var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B)));
             _haloBrushes.Add(brush);
             var shape = KeepRing(_compositor.CreateSpriteShape(geometry));
@@ -152,9 +157,10 @@ internal sealed class CompositionBackend : IDisposable
     private void SetGeometry(CompositionRoundedRectangleGeometry geometry, float thickness, bool rounded, bool animate)
     {
         float inset = rounded ? 20 * _dpiScale : 0;
-        float radius = rounded ? Math.Min(_width, _height) * 0.22f : 3 * _dpiScale;
-        var offset = new Vector2(inset + thickness / 2);
-        var size = new Vector2(Math.Max(0, _width - inset * 2 - thickness), Math.Max(0, _height - inset * 2 - thickness));
+        float radius = rounded ? Math.Min(_ringBounds.Width, _ringBounds.Height) * 0.22f : 3 * _dpiScale;
+        var offset = new Vector2(_ringBounds.Left - _left + inset + thickness / 2,
+                                 _ringBounds.Top - _top + inset + thickness / 2);
+        var size = new Vector2(Math.Max(0, _ringBounds.Width - inset * 2 - thickness), Math.Max(0, _ringBounds.Height - inset * 2 - thickness));
         if (!animate || _compositor == null)
         {
             geometry.Offset = offset;
@@ -169,16 +175,30 @@ internal sealed class CompositionBackend : IDisposable
         geometry.CornerRadius = new Vector2(radius);
     }
 
+    public void SetLayout(System.Drawing.Rectangle ringBounds, bool animate)
+    {
+        if (_ringBounds == ringBounds) return;
+        _ringBounds = ringBounds;
+        if (_geometry != null) SetGeometry(_geometry, (float)_currentThickness, _currentRounded, animate);
+    }
+
+    // QuadraticEase(EaseInOut), exactly as the WPF animations: two quadratic
+    // segments. These Bezier control points represent x=t, y=t² and y=2t−t².
+    private CompositionCubicBezierEasingFunction QuadraticSegment(bool easeIn) => _compositor!.CreateCubicBezierEasingFunction(
+        easeIn ? new Vector2(1f / 3, 0) : new Vector2(1f / 3, 2f / 3),
+        easeIn ? new Vector2(2f / 3, 1f / 3) : new Vector2(2f / 3, 1));
+
     private void AnimateVector(CompositionObject target, string property, Vector2 to)
     {
         if (_compositor == null) return;
-        var animation = _compositor.CreateVector2KeyFrameAnimation();
-        var easing = _compositor.CreateCubicBezierEasingFunction(new Vector2(0.455f, 0.03f), new Vector2(0.515f, 0.955f));
-        animation.InsertKeyFrame(1, to, easing);
+        using var animation = _compositor.CreateVector2KeyFrameAnimation();
+        using var easeIn = QuadraticSegment(true);
+        using var easeOut = QuadraticSegment(false);
+        animation.SetVector2Parameter("target", to);
+        animation.InsertExpressionKeyFrame(0.5f, "this.StartingValue + (target - this.StartingValue) * 0.5", easeIn);
+        animation.InsertKeyFrame(1, to, easeOut);
         animation.Duration = TimeSpan.FromSeconds(0.4);
         target.StartAnimation(property, animation);
-        animation.Dispose();
-        easing.Dispose();
     }
 
     private static Color ToColor(double kelvin)
@@ -201,11 +221,15 @@ internal sealed class CompositionBackend : IDisposable
     public void SetVisible(bool visible)
     {
         if (_result == null || _compositor == null) return;
-        var animation = _compositor.CreateScalarKeyFrameAnimation();
-        animation.InsertKeyFrame(1, visible ? 1 : 0);
+        float target = visible ? 1 : 0;
+        using var animation = _compositor.CreateScalarKeyFrameAnimation();
+        using var easeIn = QuadraticSegment(true);
+        using var easeOut = QuadraticSegment(false);
+        animation.SetScalarParameter("target", target);
+        animation.InsertExpressionKeyFrame(0.5f, "this.StartingValue + (target - this.StartingValue) * 0.5", easeIn);
+        animation.InsertKeyFrame(1, target, easeOut);
         animation.Duration = TimeSpan.FromSeconds(0.4);
         _result.StartAnimation("Opacity", animation);
-        animation.Dispose();
     }
 
     public void UpdateCursor()

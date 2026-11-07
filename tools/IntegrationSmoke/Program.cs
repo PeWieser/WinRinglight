@@ -219,7 +219,7 @@ internal static class Program
         if (!window.DevCompositionActive) throw new Exception("Fullscreen caused fallback.");
         fullscreenField.SetValue(window, false);
         window.UpdateMonitorSetup();
-        AssertBounds(GetCompositionHwnd(window), screens[0].WorkingArea);
+        AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
         Config.Current.IsSpanned = true;
         window.UpdateMonitorSetup();
         if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Spanned mode failed.");
@@ -236,7 +236,7 @@ internal static class Program
         var area = screens[0].WorkingArea;
         var left = new System.Drawing.Rectangle(area.Left, area.Top, area.Width / 2, area.Height);
         var right = new System.Drawing.Rectangle(left.Right, area.Top, area.Width - left.Width, area.Height);
-        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] { new[] { left, right }, 300f,
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] { new[] { new CompositionLayout.Piece(left, left), new CompositionLayout.Piece(right, right) }, 300f,
             (float)Config.Current.Thickness, true, 4000d, true, true });
         var windows = GetWindows(window);
         if (windows.Count != 2) throw new Exception("Two-window scene was not created.");
@@ -303,7 +303,7 @@ internal static class Program
             for (int i = 0; i < 30 && (bool)field.GetValue(window)!; i++) PumpFor(100);
             if ((bool)field.GetValue(window)! || !window.DevCompositionActive)
                 throw new Exception("Fullscreen detector did not restore Composition working area.");
-            AssertBounds(GetCompositionHwnd(window), screens[0].WorkingArea);
+            AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
             Console.WriteLine("PASS: External fullscreen window triggers real detector and restores working area.");
         }
         finally { if (!process.HasExited) process.Kill(); }
