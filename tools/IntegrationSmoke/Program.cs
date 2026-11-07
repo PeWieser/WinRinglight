@@ -731,7 +731,7 @@ internal static class Program
             // Simulate an old app's provider stuck in an in-flight call. This
             // exercises the replacement decision, not a real hung COM server.
             Set("_enabled", true); Set("_workerCount", 1); Set("_workerVersion", 1);
-            Set("_queryVersion", 1); Set("_queryGeneration", 0); Set("_queryForeground", IntPtr.Zero);
+            Set("_queryVersion", 1); Set("_queryGeneration", -1); Set("_queryForeground", IntPtr.Zero);
             Set("_queryStarted", System.Diagnostics.Stopwatch.GetTimestamp() - System.Diagnostics.Stopwatch.Frequency);
             type.GetMethod("Expire", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(tracker, null);
             if (Get("_workerVersion") != 2) throw new Exception("Stalled old provider did not trigger a replacement worker.");
