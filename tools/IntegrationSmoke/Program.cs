@@ -14,6 +14,16 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--multiline-caret-fixture")
+        {
+            var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+            var app = new System.Windows.Application();
+            var input = new System.Windows.Controls.TextBox { Text = "First line of selection\nSecond line of selection\nThird line of selection", AcceptsReturn = true, Margin = new Thickness(15), FontSize = 18 };
+            var form = new Window { Title = "Multiline caret fixture", Left = area.Left + 100, Top = area.Top + 180,
+                Width = 500, Height = 220, Topmost = true, Content = input };
+            form.ContentRendered += (_, _) => { form.Activate(); input.Focus(); input.CaretIndex = input.Text.Length; };
+            app.Run(form); return 0;
+        }
         if (args.Length == 1 && args[0] == "--wpf-caret-fixture")
         {
             var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
@@ -155,6 +165,7 @@ internal static class Program
             TestCaretMasks(window, screens[0]);
             TestCaretTracking(window, screens[0], "--caret-fixture");
             TestCaretTracking(window, screens[0], "--wpf-caret-fixture");
+            TestMultilineSelection(window);
             TestCaretSwitch(window);
             TestCaretWatchdog();
             TestChromeAddressCaret(window);
@@ -703,6 +714,34 @@ internal static class Program
             if (!process.HasExited) process.Kill();
             Config.Current.TextCaretCutout = false;
             window.RefreshCaretTracking();
+        }
+    }
+
+    private static void TestMultilineSelection(MainWindow window)
+    {
+        if (Environment.ProcessPath == null || System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) return;
+        Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
+        var caret = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var selection = typeof(MainWindow).GetField("_textSelection", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--multiline-caret-fixture") { UseShellExecute = false })!;
+        try
+        {
+            for (int i = 0; i < 50 && caret.GetValue(window) == null; i++) PumpFor(100);
+            if (caret.GetValue(window) == null) throw new Exception("Multiline text caret was not detected.");
+            keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(0x41, 0, 0, UIntPtr.Zero);
+            keybd_event(0x41, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero);
+            for (int i = 0; i < 30 && selection.GetValue(window) == null; i++) PumpFor(100);
+            if (selection.GetValue(window) is not System.Drawing.Rectangle bounds || bounds.Height < 40 || bounds.Width < 50)
+                throw new Exception($"Multiline selection bounds incorrect: {selection.GetValue(window)}.");
+            keybd_event(0x27, 0, 0, UIntPtr.Zero); keybd_event(0x27, 0, 2, UIntPtr.Zero);
+            for (int i = 0; i < 30 && selection.GetValue(window) != null; i++) PumpFor(100);
+            if (selection.GetValue(window) != null) throw new Exception("Collapsed selection did not clear its bounds.");
+            Console.WriteLine("PASS: Multiline editable selection bounds are captured and cleared when collapsed.");
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
         }
     }
 
