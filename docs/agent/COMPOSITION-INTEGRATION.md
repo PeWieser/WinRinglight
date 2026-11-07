@@ -19,7 +19,9 @@ Der separat getestete Prototyp (9d1c54f) wurde vom Nutzer auf einem Full-HD-Haup
 WPF hat heute selbst Grenzfälle bei gemischter DPI; Fallback bewahrt vorhandenes Verhalten, garantiert aber nicht dessen Fehlerfreiheit. Kein Claim „alle Funktionen erhalten“, bis die obige Matrix tatsächlich getestet ist.
 
 ## Integrationsschritt 1 (experimentell)
-- Dev-Schalter aktiviert Composition nur bei Windows >= 1903, genau einem ausgewählten Monitor, 100 % DPI, nicht gespannt, nicht Vollbild. Keine automatische Speicherung; Start bleibt WPF.
+- Dev-Schalter aktiviert Composition nur bei Windows >= 1903, genau einem Monitor (ausgewählt oder gespannt), 100 % DPI, nicht Vollbild. Keine automatische Speicherung; Start bleibt WPF.
 - Composition erhält WPF-Cursor-Takt und -Einstellungen, Ringdicke, Stil beim Aktivieren, aktuelle und animierte Temperatur, Ein-/Aus-Animation sowie Capture-Einstellung. Bei Monitor-/Vollbildänderung oder Stilwechsel wird ausdrücklich zu WPF zurückgeschaltet, um die vorhandenen Übergänge zu bewahren; der Schalter muss danach erneut aktiviert werden. Status steht im Dev-Tab.
 - Bei Initialisierungs-, Render- oder Capture-Affinity-Fehler WPF-Fallback. Capture-Ausschluss wird vor dem Anzeigen des Composition-Fensters gesetzt. Eingeschaltete WPF-Caching-/Glow-Diagnosen betreffen weiterhin nur den WPF-Renderer.
 - Einschränkung: Mit dem Windows-SDK-Target `net10.0-windows10.0.19041.0` und `SupportedOSPlatformVersion=10.0.17763.0` ist ältere Windows-Kompatibilität ein gesonderter Abnahmepunkt. Auf Desktop, auch beim Toggle und schnellen Wechseln von Capture/Einstellungen, noch nicht getestet.
+
+- Cursor-Masken und Farbe werden im Composition-Betrieb nicht länger auf dem verborgenen WPF-Overlay neu gesetzt; beim Rückfall wird WPF wieder synchronisiert. Windows-Integration-Smoke prüft Aktivierung und Rückfall, sofern ein geeigneter Desktop verfügbar ist.

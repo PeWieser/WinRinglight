@@ -45,6 +45,25 @@ internal static class Program
             var grid = (Grid)window.FindName("MainGrid");
             if (grid.Visibility != Visibility.Hidden) throw new Exception("WPF grid not hidden in Composition mode.");
             var mask = (RadialGradientBrush)grid.OpacityMask;
+            var children = grid.Children;
+            var wpfRing = (Border)children[children.Count - 1];
+            var colorBefore = ((SolidColorBrush)wpfRing.BorderBrush).Color;
+            Config.Current.AutoTemperature = false;
+            Config.Current.Temperature = 6500;
+            window.ApplySettingsLive(1, Config.Current.Thickness, 6500);
+            if (((SolidColorBrush)wpfRing.BorderBrush).Color != colorBefore)
+                throw new Exception("Composition color update changed hidden WPF ring.");
+            Config.Current.HideFromCapture = true;
+            window.ApplyCaptureAffinity();
+            if (!window.DevCompositionActive) throw new Exception("Capture exclusion caused fallback: " + window.DevCompositionStatus);
+            Config.Current.HideFromCapture = false;
+            window.ApplyCaptureAffinity();
+            if (!window.DevCompositionActive) throw new Exception("Clearing capture exclusion caused fallback.");
+            window.SetRinglightState(false);
+            if (!window.DevCompositionActive) throw new Exception("Turning off caused Composition fallback.");
+            window.SetRinglightState(true);
+            if (!window.DevCompositionActive) throw new Exception("Turning on caused Composition fallback.");
+            Console.WriteLine("PASS: Color isolation, capture API on/off and light on/off retain Composition.");
             var centerBefore = mask.Center;
             var update = typeof(MainWindow).GetMethod("UpdateCursorCutout", BindingFlags.Instance | BindingFlags.NonPublic)!;
             if (GetCursorPos(out Point original) && SetCursorPos(original.X + 10, original.Y + 10) &&
@@ -55,6 +74,8 @@ internal static class Program
                 window.SetCompositionExperiment(false);
                 if (window.DevCompositionActive || grid.Visibility != Visibility.Visible) throw new Exception("WPF fallback failed.");
                 if (mask.Center == centerBefore) throw new Exception("WPF mask did not resynchronise on fallback.");
+                if (((SolidColorBrush)wpfRing.BorderBrush).Color == colorBefore)
+                    throw new Exception("WPF ring color did not resynchronise on fallback.");
                 SetCursorPos(original.X, original.Y);
                 Console.WriteLine("PASS: Composition activation, isolated cursor mask, WPF fallback and cursor resync.");
             }
