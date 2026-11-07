@@ -767,7 +767,13 @@ internal static class Program
                     var sels = textPattern.GetSelection();
                     foreach (var sel in sels) detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, offset={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, textPattern.DocumentRange, System.Windows.Automation.Text.TextPatternRangeEndpoint.Start)}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
                 }
-                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}, focus={focus.Current.Name} {detail}.");
+                var fg = GetForegroundWindow();
+                uint tid = GetWindowThreadProcessId(fg, out _);
+                var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+                bool ok = GetGUIThreadInfo(tid, ref info);
+                var native = new Point { X = info.Rect.Left, Y = info.Rect.Top };
+                ClientToScreen(info.Caret, ref native);
+                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}, focus={focus.Current.Name}, foreground={fg:X}, main={process.MainWindowHandle:X}, native={ok}/{native.X},{native.Y} rect={info.Rect.Left},{info.Rect.Top},{info.Rect.Right},{info.Rect.Bottom} caret={info.Caret:X} {detail}.");
             }
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
@@ -946,6 +952,12 @@ internal static class Program
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [StructLayout(LayoutKind.Sequential)] private struct GuiRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct GuiThreadInfo { public uint Size, Flags; public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret; public GuiRect Rect; }
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
+    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
