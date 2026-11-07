@@ -275,6 +275,29 @@ internal static class Program
         scene.GetType().GetMethod("SetVisible")!.Invoke(scene, new object[] { true });
         if (visual.TryGetAnimationController("Opacity") == null) throw new Exception("Reversed fade animation did not start.");
         Console.WriteLine("PASS: Spanned pieces share global geometry and layout/fade animation controllers start without window recreation.");
+        // Probe actual desktop pixels on both sides of the synthetic seam, with
+        // capture exclusion disabled. Some hosted desktops cannot be sampled.
+        window.ApplyCaptureAffinity();
+        if (GetCursorPos(out Point beforeProbe))
+        {
+            SetCursorPos(area.Left + area.Width / 2, area.Bottom - 1);
+            scene.GetType().GetMethod("UpdateCursor")!.Invoke(scene, null);
+            Pump();
+            System.Threading.Thread.Sleep(650);
+            DwmFlush();
+            float scale = (float)windows[0]!.GetType().GetProperty("DpiScale")!.GetValue(windows[0])!;
+            int y = area.Top + (int)(20 * scale + Config.Current.Thickness * scale / 2);
+            int x1 = left.Right - area.Width / 8, x2 = left.Right + area.Width / 8;
+            IntPtr dc = GetDC(IntPtr.Zero);
+            uint p1 = GetPixel(dc, x1, y), p2 = GetPixel(dc, x2, y);
+            ReleaseDC(IntPtr.Zero, dc);
+            static bool RingColor(uint p) => p != 0xffffffff && Math.Abs((int)(p & 255) - 246) < 16 && Math.Abs((int)((p >> 8) & 255) - 203) < 16 && Math.Abs((int)((p >> 16) & 255) - 141) < 16;
+            Console.WriteLine(RingColor(p1) && RingColor(p2)
+                ? "PASS: Desktop pixel probe saw the shared ring on both sides of the synthetic seam."
+                : $"PARTIAL: Desktop pixel probe inconclusive (left=0x{p1:X8}, right=0x{p2:X8}); visible ring not established.");
+            SetCursorPos(beforeProbe.X, beforeProbe.Y);
+        }
+        else Console.WriteLine("PARTIAL: Desktop pixel probe could not position cursor.");
         // The same screen cursor must be mapped to each window's local coordinates.
         if (GetCursorPos(out Point original) && SetCursorPos(area.Left + area.Width / 3, area.Top + area.Height / 3) && GetCursorPos(out Point moved))
         {
@@ -366,6 +389,10 @@ internal static class Program
         Dispatcher.PushFrame(frame);
     }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
