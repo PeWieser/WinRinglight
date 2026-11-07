@@ -621,21 +621,25 @@ namespace WinRinglight
         private CompositionScene? _compositionBackend;
         private CaretTracker? _caretTracker;
         private System.Drawing.Point? _caretPosition;
+        private System.Drawing.Rectangle? _textSelection;
         private RadialGradientBrush? _caretWpfMask;
 
         public void RefreshCaretTracking()
         {
-            _caretTracker ??= new CaretTracker(Dispatcher, SetCaretPosition);
+            _caretTracker ??= new CaretTracker(Dispatcher, SetTextCutout);
             _caretTracker.SetRate(Config.Current.CursorMaxFps, Config.Current.CursorUnlimitedFps);
             _caretTracker.SetEnabled(Config.Current.TextCaretCutout);
         }
 
-        private void SetCaretPosition(System.Drawing.Point? position)
+        private void SetCaretPosition(System.Drawing.Point? position) => SetTextCutout(position, null);
+
+        private void SetTextCutout(System.Drawing.Point? position, System.Drawing.Rectangle? selection)
         {
             _caretPosition = position;
+            _textSelection = selection;
             if (_compositionBackend != null)
             {
-                try { _compositionBackend.UpdateCaret(position); }
+                try { _compositionBackend.UpdateTextCutout(position, selection); }
                 catch (Exception ex) { FailComposition(ex); }
             }
             UpdateWpfCaretMask();
@@ -658,10 +662,15 @@ namespace WinRinglight
             };
             var p = _caretPosition.Value;
             var local = CaretMaskGrid.PointFromScreen(new System.Windows.Point(p.X, p.Y));
-            _caretWpfMask.Center = local;
-            _caretWpfMask.GradientOrigin = local;
-            _caretWpfMask.RadiusX = CursorCutoutMask.RadiusX;
-            _caretWpfMask.RadiusY = CursorCutoutMask.RadiusY;
+            var selected = _textSelection.GetValueOrDefault();
+            var tl = _textSelection.HasValue ? CaretMaskGrid.PointFromScreen(new System.Windows.Point(selected.Left, selected.Top)) : local;
+            var br = _textSelection.HasValue ? CaretMaskGrid.PointFromScreen(new System.Windows.Point(selected.Right, selected.Bottom)) : local;
+            var ellipse = TextCutoutEllipse.Create(local.X, local.Y, CursorCutoutMask.RadiusX, tl.X, tl.Y, br.X, br.Y, _textSelection.HasValue);
+            _caretWpfMask.Center = new System.Windows.Point(ellipse.X, ellipse.Y);
+            _caretWpfMask.GradientOrigin = _caretWpfMask.Center;
+            _caretWpfMask.RadiusX = ellipse.RadiusX;
+            _caretWpfMask.RadiusY = ellipse.RadiusY;
+            _caretWpfMask.GradientStops[1].Offset = ellipse.InnerStop;
             CaretMaskGrid.OpacityMask = _caretWpfMask;
         }
         public bool DevCompositionActive => _compositionBackend != null;
@@ -683,7 +692,7 @@ namespace WinRinglight
                 _compositionBackend.SetSupersampling(DevSupersampling);
                 _compositionBackend.SetTiling(DevTiling);
                 ConfigureCompositionScene();
-                _compositionBackend.UpdateCaret(_caretPosition);
+                _compositionBackend.UpdateTextCutout(_caretPosition, _textSelection);
                 UpdateWpfCaretMask();
                 MainGrid.Visibility = Visibility.Hidden;
                 DevCompositionChanged?.Invoke(this, EventArgs.Empty);

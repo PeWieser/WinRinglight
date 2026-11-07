@@ -15,7 +15,7 @@ namespace WinRinglight;
 internal sealed class CaretTracker : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly Action<Point?> _changed;
+    private readonly Action<Point?, Rectangle?> _changed;
     private readonly DispatcherTimer _expiry;
     private Thread? _worker;
     private int _workerVersion, _workerCount, _queryVersion, _queryGeneration;
@@ -31,13 +31,16 @@ internal sealed class CaretTracker : IDisposable
     private long _lastSuccess;
     private IntPtr _sampleForeground;
     private Point? _lastPoint;
+    private Rectangle? _lastSelection;
     private sealed class LegacySelectionState
     {
         public string? FocusId;
         public Point? Anchor;
     }
 
-    public CaretTracker(Dispatcher dispatcher, Action<Point?> changed)
+    public CaretTracker(Dispatcher dispatcher, Action<Point?> changed) : this(dispatcher, (point, _) => changed(point)) { }
+
+    public CaretTracker(Dispatcher dispatcher, Action<Point?, Rectangle?> changed)
     {
         _dispatcher = dispatcher; _changed = changed;
         _expiry = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => Expire(), dispatcher);
@@ -50,7 +53,7 @@ internal sealed class CaretTracker : IDisposable
     {
         Interlocked.Increment(ref _generation);
         _enabled = enabled;
-        if (!enabled) { RemoveHooks(); _expiry.Stop(); Publish(null); _wake.Set(); return; }
+        if (!enabled) { RemoveHooks(); _expiry.Stop(); Publish(null, null); _wake.Set(); return; }
         InstallHooks();
         _expiry.Start();
         _wake.Set();
@@ -76,6 +79,7 @@ internal sealed class CaretTracker : IDisposable
     private void WorkLoop(int version)
     {
         Point? previous = null;
+        Rectangle? previousSelection = null;
         IntPtr previousForeground = IntPtr.Zero;
         int previousGeneration = -1, previousRefresh = -1;
         var selectionState = new LegacySelectionState();
@@ -97,14 +101,16 @@ internal sealed class CaretTracker : IDisposable
                 IntPtr foreground = GetForegroundWindow();
                 long started = Stopwatch.GetTimestamp();
                 Point? point = null;
+                Rectangle? selection = null;
                 Volatile.Write(ref _queryGeneration, generation);
                 Interlocked.Exchange(ref _queryForeground, foreground);
                 Interlocked.Exchange(ref _queryStarted, started);
                 Volatile.Write(ref _queryVersion, version);
                 if (foreground != previousForeground || generation != previousGeneration) selectionState = new LegacySelectionState();
-                try { point = FindCaret(foreground, foreground == previousForeground ? previous : null, selectionState); }
+                try { point = FindCaret(foreground, foreground == previousForeground ? previous : null, selectionState, out selection); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
                 if (version != Volatile.Read(ref _workerVersion)) return;
+                if (point == null) selection = null;
                 Volatile.Write(ref _queryVersion, 0);
                 if (!_disposed && _enabled && generation == Volatile.Read(ref _generation) && foreground != IntPtr.Zero &&
                     foreground == GetForegroundWindow() && Stopwatch.GetElapsedTime(started) <= TimeSpan.FromSeconds(1))
@@ -112,12 +118,12 @@ internal sealed class CaretTracker : IDisposable
                     Interlocked.Exchange(ref _lastSuccess, Stopwatch.GetTimestamp());
                     // No dispatcher work or mask invalidation for an unchanged caret.
                     int refresh = Volatile.Read(ref _refreshVersion);
-                    if (point != previous || foreground != previousForeground || generation != previousGeneration || refresh != previousRefresh)
+                    if (point != previous || selection != previousSelection || foreground != previousForeground || generation != previousGeneration || refresh != previousRefresh)
                     {
-                        previous = point; previousForeground = foreground; previousGeneration = generation; previousRefresh = refresh;
+                        previous = point; previousSelection = selection; previousForeground = foreground; previousGeneration = generation; previousRefresh = refresh;
                         if (!_dispatcher.HasShutdownStarted)
                         {
-                            try { _dispatcher.BeginInvoke(() => Accept(version, generation, foreground, started, point)); }
+                            try { _dispatcher.BeginInvoke(() => Accept(version, generation, foreground, started, point, selection)); }
                             catch (InvalidOperationException) { }
                         }
                     }
@@ -126,11 +132,11 @@ internal sealed class CaretTracker : IDisposable
         }
     }
 
-    private void Accept(int version, int generation, IntPtr foreground, long started, Point? point)
+    private void Accept(int version, int generation, IntPtr foreground, long started, Point? point, Rectangle? selection)
     {
         if (!_enabled || version != Volatile.Read(ref _workerVersion) || generation != Volatile.Read(ref _generation) || Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(1) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
         _sampleForeground = foreground;
-        Publish(point);
+        Publish(point, selection);
     }
 
     private void Expire()
@@ -147,19 +153,20 @@ internal sealed class CaretTracker : IDisposable
         if ((_sampleForeground != foreground || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromMilliseconds(Math.Max(1000, _intervalMs * 3 + 100))) && _lastPoint != null)
         {
             Interlocked.Increment(ref _refreshVersion);
-            Publish(null);
+            Publish(null, null);
         }
     }
 
-    private void Publish(Point? point)
+    private void Publish(Point? point, Rectangle? selection)
     {
-        if (_lastPoint == point) return;
-        _lastPoint = point;
-        _changed(point);
+        if (_lastPoint == point && _lastSelection == selection) return;
+        _lastPoint = point; _lastSelection = selection;
+        _changed(point, selection);
     }
 
-    private static Point? FindCaret(IntPtr foreground, Point? previous, LegacySelectionState state)
+    private static Point? FindCaret(IntPtr foreground, Point? previous, LegacySelectionState state, out Rectangle? selection)
     {
+        selection = null;
         if (foreground == IntPtr.Zero) return null;
         // UIA's active caret is more accurate than GUITHREADINFO in browsers:
         // their native caret rectangle can represent an entire text field.
@@ -170,6 +177,7 @@ internal sealed class CaretTracker : IDisposable
             // A document can expose a text selection/caret even when it is not
             // an input. Never treat a read-only browsing position as an editor.
             if (!IsEditable(focused!)) return null;
+            selection = FindSelectionBounds(focused!);
             var modern = FindAutomationCaret(out _);
             if (modern != null) return modern;
             var legacy = FindLegacyCaret(focused, previous, state);
@@ -185,6 +193,33 @@ internal sealed class CaretTracker : IDisposable
             if (ClientToScreen(info.Caret, ref p)) return new Point(p.X, p.Y);
         }
         return null;
+    }
+
+    // Read only geometry for selected, visible text, never text content.
+    // A union is deliberately conservative for multi-line selection.
+    private static Rectangle? FindSelectionBounds(AutomationElement focused)
+    {
+        try
+        {
+            if (!focused.TryGetCurrentPattern(TextPattern.Pattern, out object value)) return null;
+            var ranges = ((TextPattern)value).GetSelection();
+            double left = double.PositiveInfinity, top = double.PositiveInfinity, right = double.NegativeInfinity, bottom = double.NegativeInfinity;
+            foreach (var range in ranges)
+            {
+                if (range.CompareEndpoints(TextPatternRangeEndpoint.Start, range, TextPatternRangeEndpoint.End) == 0) continue;
+                foreach (var rect in range.GetBoundingRectangles())
+                {
+                    if (rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0 || !double.IsFinite(rect.Left) || !double.IsFinite(rect.Top) ||
+                        !double.IsFinite(rect.Right) || !double.IsFinite(rect.Bottom) || Math.Abs(rect.Left) > 1000000 || Math.Abs(rect.Top) > 1000000 ||
+                        Math.Abs(rect.Right) > 1000000 || Math.Abs(rect.Bottom) > 1000000) continue;
+                    left = Math.Min(left, rect.Left); top = Math.Min(top, rect.Top);
+                    right = Math.Max(right, rect.Right); bottom = Math.Max(bottom, rect.Bottom);
+                }
+            }
+            return double.IsFinite(left) && right > left && bottom > top
+                ? Rectangle.FromLTRB((int)Math.Floor(left), (int)Math.Floor(top), (int)Math.Ceiling(right), (int)Math.Ceiling(bottom)) : null;
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { return null; }
     }
 
     private static bool IsEditable(AutomationElement focused)
@@ -383,7 +418,7 @@ internal sealed class CaretTracker : IDisposable
         _hooks.Clear();
     }
 
-    public void Dispose() { _enabled = false; _disposed = true; RemoveHooks(); _wake.Set(); _expiry.Stop(); Publish(null); }
+    public void Dispose() { _enabled = false; _disposed = true; RemoveHooks(); _wake.Set(); _expiry.Stop(); Publish(null, null); }
     private delegate void WinEventCallback(IntPtr hook, uint evt, IntPtr hwnd, int objectId, int childId, uint thread, uint time);
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint first, uint last, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);

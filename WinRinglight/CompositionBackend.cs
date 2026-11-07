@@ -46,6 +46,7 @@ internal sealed class CompositionBackend : IDisposable
     }
     private ExtraMask? _caretMask;
     private System.Drawing.Point? _caret;
+    private System.Drawing.Rectangle? _selection;
     private CompositionSurfaceBrush? _ringBrush;
     private CompositionMaskBrush? _maskedBrush;
     private bool _maskApplied;
@@ -286,22 +287,39 @@ internal sealed class CompositionBackend : IDisposable
         if (mouse) tile.Gradient.EllipseCenter = new Vector2(x - tile.Bounds.Left, y - tile.Bounds.Top);
         tile.MaskApplied = mouse;
         CompositionBrush source = mouse ? tile.MaskBrush : tile.RingBrush;
-        if (_caret is System.Drawing.Point caret && CursorCoverage.Intersects(tile.Bounds, caret.X, caret.Y, _cursorRadius))
+        if (GetTextEllipse() is TextCutoutEllipse ellipse && ellipse.Intersects(tile.Bounds))
         {
             tile.CaretMask ??= CreateCaretMask(new Vector2(tile.Bounds.Width, tile.Bounds.Height));
-            var center = new Vector2(caret.X - tile.Bounds.Left, caret.Y - tile.Bounds.Top);
-            if (tile.CaretMask.Gradient.EllipseCenter != center) tile.CaretMask.Gradient.EllipseCenter = center;
+            SetTextGradient(tile.CaretMask.Gradient, ellipse, tile.Bounds.Left, tile.Bounds.Top);
             if (tile.CaretMask.SourceVisual.Brush != source) tile.CaretMask.SourceVisual.Brush = source;
             source = tile.CaretMask.Brush;
         }
         if (tile.Visual.Brush != source) tile.Visual.Brush = source;
     }
 
-    public void UpdateCaret(System.Drawing.Point? caret)
+    public void UpdateCaret(System.Drawing.Point? caret) => UpdateTextCutout(caret, null);
+
+    public void UpdateTextCutout(System.Drawing.Point? caret, System.Drawing.Rectangle? selection)
     {
-        if (_caret == caret) return;
-        _caret = caret;
+        if (_caret == caret && _selection == selection) return;
+        _caret = caret; _selection = selection;
         ApplyCursor();
+    }
+
+    private TextCutoutEllipse? GetTextEllipse()
+    {
+        if (_caret is not System.Drawing.Point p) return null;
+        var r = _selection.GetValueOrDefault();
+        return TextCutoutEllipse.Create(p.X, p.Y, _cursorRadius, r.Left, r.Top, r.Right, r.Bottom, _selection.HasValue);
+    }
+
+    private static void SetTextGradient(CompositionRadialGradientBrush gradient, TextCutoutEllipse ellipse, int left, int top)
+    {
+        var center = new Vector2((float)(ellipse.X - left), (float)(ellipse.Y - top));
+        var radius = new Vector2((float)ellipse.RadiusX, (float)ellipse.RadiusY);
+        if (gradient.EllipseCenter != center) gradient.EllipseCenter = center;
+        if (gradient.EllipseRadius != radius) gradient.EllipseRadius = radius;
+        if (gradient.ColorStops[1].Offset != (float)ellipse.InnerStop) gradient.ColorStops[1].Offset = (float)ellipse.InnerStop;
     }
 
     private T Keep<T>(T value) where T : CompositionObject { _objects.Add(value); return value; }
@@ -513,11 +531,10 @@ internal sealed class CompositionBackend : IDisposable
         if (mouse) _gradient.EllipseCenter = new Vector2(_lastX - _left, _lastY - _top);
         _maskApplied = mouse;
         CompositionBrush source = mouse ? _maskedBrush : _ringBrush;
-        if (_caret is System.Drawing.Point caret && CursorCoverage.Intersects(bounds, caret.X, caret.Y, _cursorRadius))
+        if (GetTextEllipse() is TextCutoutEllipse ellipse && ellipse.Intersects(bounds))
         {
             _caretMask ??= CreateCaretMask(new Vector2(_width, _height));
-            var center = new Vector2(caret.X - _left, caret.Y - _top);
-            if (_caretMask.Gradient.EllipseCenter != center) _caretMask.Gradient.EllipseCenter = center;
+            SetTextGradient(_caretMask.Gradient, ellipse, _left, _top);
             if (_caretMask.SourceVisual.Brush != source) _caretMask.SourceVisual.Brush = source;
             source = _caretMask.Brush;
         }

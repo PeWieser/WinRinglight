@@ -673,6 +673,9 @@ internal static class Program
             PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point selected || !screen.WorkingArea.Contains(selected))
                 throw new Exception($"Selected text lost its caret cutout ({fixture}).");
+            var selectedField = typeof(MainWindow).GetField("_textSelection", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            if (selectedField.GetValue(window) is not System.Drawing.Rectangle selection || selection.Width < 20)
+                throw new Exception($"Selected text geometry not obtained ({fixture}): {selectedField.GetValue(window)}.");
             if (fixture == "--wpf-caret-fixture")
             {
                 keybd_event(0x09, 0, 0, UIntPtr.Zero); keybd_event(0x09, 0, 2, UIntPtr.Zero);
@@ -930,13 +933,21 @@ internal static class Program
                     WaitPixels(); uint cut1 = Pixel(x1), cut2 = Pixel(x2);
                     caret.Invoke(probe, new object?[] { null });
                     WaitPixels(); uint restored1 = Pixel(x1), restored2 = Pixel(x2);
+                    var selectionUpdate = backendType.GetMethod("UpdateTextCutout")!;
+                    cursor.Invoke(probe, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                    selectionUpdate.Invoke(probe, new object?[] { new System.Drawing.Point(x2, y), new System.Drawing.Rectangle(bounds.Left + 80, y - 8, 160, 16) });
+                    WaitPixels(); uint selectedStart = Pixel(bounds.Left + 85), selectedEnd = Pixel(bounds.Left + 235);
+                    selectionUpdate.Invoke(probe, new object?[] { new System.Drawing.Point(x2, y), null });
+                    WaitPixels(); uint deselectedStart = Pixel(bounds.Left + 85), caretOnly = Pixel(x2);
                     static int RgbSum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
                     if (RgbSum(initial1) < 300 || RgbSum(initial2) < 300 || RgbSum(cut1) > 40 || RgbSum(cut2) > 40 || RgbSum(restored1) > 40 || RgbSum(restored2) < 300)
                         throw new Exception($"Caret desktop pixel probe failed (tiled={tiled}): {initial1:X}/{initial2:X} -> {cut1:X}/{cut2:X} -> {restored1:X}/{restored2:X}");
+                    if (RgbSum(selectedStart) > 40 || RgbSum(selectedEnd) > 40 || RgbSum(deselectedStart) < 300 || RgbSum(caretOnly) > 40)
+                        throw new Exception($"Selected text desktop pixel probe failed (tiled={tiled}): {selectedStart:X}/{selectedEnd:X} -> {deselectedStart:X}/{caretOnly:X}.");
                 }
                 finally { ((IDisposable)probe).Dispose(); }
             }
-            Console.WriteLine("PASS: Real desktop pixels show separate mouse and caret cutouts and caret-only restoration in both renderers.");
+            Console.WriteLine("PASS: Real desktop pixels show mouse, caret and full selection cutouts and restoration in both renderers.");
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;
