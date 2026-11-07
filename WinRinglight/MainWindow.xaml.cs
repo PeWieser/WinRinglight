@@ -439,6 +439,7 @@ namespace WinRinglight
 
             var screens = System.Windows.Forms.Screen.AllScreens;
             var entries = new System.Collections.Generic.List<FullscreenPolicy.Entry>();
+            var resolved = new System.Collections.Generic.HashSet<int>();
             IntPtr currentHwnd = GetTopWindow(IntPtr.Zero);
             uint myPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
             while (currentHwnd != IntPtr.Zero)
@@ -452,7 +453,7 @@ namespace WinRinglight
                 {
                     var monitor = System.Windows.Forms.Screen.FromHandle(currentHwnd);
                     int index = Array.FindIndex(screens, x => x.DeviceName == monitor.DeviceName);
-                    entries.Add(new FullscreenPolicy.Entry(index, true));
+                    if (index >= 0 && resolved.Add(index)) entries.Add(new FullscreenPolicy.Entry(index, true));
                 }
                 else if (pid != myPid && IsWindowVisible(currentHwnd) && cName != "Progman" && cName != "WorkerW" && cName != "EdgeUiInputTopWnd")
                 {
@@ -463,11 +464,12 @@ namespace WinRinglight
                         for (int i = 0; i < screens.Length; i++)
                         {
                             var b = screens[i].Bounds;
-                            if (rect.Left <= b.Left + 5 && rect.Top <= b.Top + 5 && rect.Right >= b.Right - 5 && rect.Bottom >= b.Bottom - 5)
+                            if (rect.Left <= b.Left + 5 && rect.Top <= b.Top + 5 && rect.Right >= b.Right - 5 && rect.Bottom >= b.Bottom - 5 && resolved.Add(i))
                                 entries.Add(new FullscreenPolicy.Entry(i, false));
                         }
                     }
                 }
+                if (resolved.Count == screens.Length) break;
                 currentHwnd = GetWindow(currentHwnd, GW_HWNDNEXT);
             }
             IntPtr foreground = GetForegroundWindow();

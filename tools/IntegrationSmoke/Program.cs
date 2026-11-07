@@ -325,15 +325,24 @@ internal static class Program
             if (!fullscreenSet.Contains(screens[0].DeviceName) || !window.DevCompositionActive)
                 throw new Exception("Fullscreen detector did not activate Composition fullscreen layout.");
             AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
+            AssertRingBounds(window, screens[0].Bounds);
             process.Kill();
             process.WaitForExit();
             for (int i = 0; i < 30 && fullscreenSet.Contains(screens[0].DeviceName); i++) PumpFor(100);
             if (fullscreenSet.Contains(screens[0].DeviceName) || !window.DevCompositionActive)
                 throw new Exception("Fullscreen detector did not restore Composition working area.");
             AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
+            AssertRingBounds(window, screens[0].WorkingArea);
             Console.WriteLine("PASS: External fullscreen window triggers real detector and restores working area.");
         }
         finally { if (!process.HasExited) process.Kill(); }
+    }
+
+    private static void AssertRingBounds(MainWindow window, System.Drawing.Rectangle expected)
+    {
+        object backend = GetFirstBackend(window);
+        var ring = (System.Drawing.Rectangle)backend.GetType().GetField("_ringBounds", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+        if (ring != expected) throw new Exception($"Composition ring bounds {ring} differ from expected {expected}.");
     }
 
     private static void AssertBounds(IntPtr hwnd, System.Drawing.Rectangle expected)
