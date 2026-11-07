@@ -26,7 +26,8 @@ jobs:
           $ErrorActionPreference = 'Continue'
           dotnet run --project tools/IntegrationSmoke/IntegrationSmoke.csproj --configuration Release 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/smoke.log"
           $code = $LASTEXITCODE
-          Get-Content "$env:RUNNER_TEMP/smoke.log" | ForEach-Object { Write-Output "::notice::$_" }
+          $summary = (Get-Content "$env:RUNNER_TEMP/smoke.log" | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
+          Write-Output "::notice::$summary"
           if ($code -ne 0) { exit $code }
       - name: Publish portable x64 app
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/win-x64

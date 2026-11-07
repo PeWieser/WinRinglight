@@ -121,7 +121,8 @@ internal static class Program
             if (!window.DevCompositionActive) throw new Exception("Composition reactivation failed: " + window.DevCompositionStatus);
             TestSettings(window);
             TestLayouts(window, screens);
-            TestFullscreenDetector(window, screens);
+            TestFullscreenDetector(window, screens, false);
+            TestFullscreenDetector(window, screens, true);
             Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
         }
@@ -367,7 +368,7 @@ internal static class Program
         Console.WriteLine("PASS: Fullscreen/working area, spanning, empty selection, reselection, two-HWND cursor/capture and failure cleanup.");
     }
 
-    private static void TestFullscreenDetector(MainWindow window, System.Windows.Forms.Screen[] screens)
+    private static void TestFullscreenDetector(MainWindow window, System.Windows.Forms.Screen[] screens, bool spanned)
     {
         if (screens.Length != 1 || Environment.ProcessPath == null ||
             System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
@@ -375,6 +376,8 @@ internal static class Program
             Console.WriteLine("SKIP: External fullscreen detector fixture requires a one-monitor apphost.");
             return;
         }
+        Config.Current.IsSpanned = spanned;
+        window.UpdateMonitorSetup();
         using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--fullscreen-fixture")
         { UseShellExecute = false, CreateNoWindow = true }) ?? throw new Exception("Could not start fullscreen fixture.");
         var fullscreenSet = (System.Collections.Generic.HashSet<string>)typeof(MainWindow).GetField("_fullscreenMonitors", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
@@ -396,9 +399,14 @@ internal static class Program
                 throw new Exception("Fullscreen detector did not restore Composition working area.");
             AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
             AssertRingBounds(window, screens[0].WorkingArea);
-            Console.WriteLine("PASS: External fullscreen window triggers real detector and restores working area.");
+            Console.WriteLine($"PASS: External fullscreen window triggers detector and restores working area (spanned={spanned}).");
         }
-        finally { if (!process.HasExited) process.Kill(); }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            Config.Current.IsSpanned = false;
+            window.UpdateMonitorSetup();
+        }
     }
 
     private static void AssertRingBounds(MainWindow window, System.Drawing.Rectangle expected)
