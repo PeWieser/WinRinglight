@@ -42,6 +42,7 @@ internal sealed class CompositionBackend : IDisposable
     {
         public required CompositionRadialGradientBrush Gradient;
         public required CompositionMaskBrush Brush;
+        public required SpriteVisual SourceVisual;
     }
     private ExtraMask? _caretMask;
     private System.Drawing.Point? _caret;
@@ -263,9 +264,20 @@ internal sealed class CompositionBackend : IDisposable
         surface.SourceSize = size;
         var brush = Keep(_compositor.CreateSurfaceBrush(surface));
         brush.Stretch = CompositionStretch.None;
+        // MaskBrush.Source accepts a surface brush, not another MaskBrush.
+        // Rasterize the already mouse-masked result into a local visual surface
+        // before applying the second (caret) mask.
+        var sourceVisual = Keep(_compositor.CreateSpriteVisual());
+        sourceVisual.Size = size;
+        var sourceSurface = Keep(_compositor.CreateVisualSurface());
+        sourceSurface.SourceVisual = sourceVisual;
+        sourceSurface.SourceSize = size;
+        var sourceBrush = Keep(_compositor.CreateSurfaceBrush(sourceSurface));
+        sourceBrush.Stretch = CompositionStretch.None;
         var mask = Keep(_compositor.CreateMaskBrush());
+        mask.Source = sourceBrush;
         mask.Mask = brush;
-        return new ExtraMask { Gradient = gradient, Brush = mask };
+        return new ExtraMask { Gradient = gradient, Brush = mask, SourceVisual = sourceVisual };
     }
 
     private void UpdateTileCursor(MaskTile tile, int x, int y)
@@ -279,7 +291,7 @@ internal sealed class CompositionBackend : IDisposable
             tile.CaretMask ??= CreateCaretMask(new Vector2(tile.Bounds.Width, tile.Bounds.Height));
             var center = new Vector2(caret.X - tile.Bounds.Left, caret.Y - tile.Bounds.Top);
             if (tile.CaretMask.Gradient.EllipseCenter != center) tile.CaretMask.Gradient.EllipseCenter = center;
-            if (tile.CaretMask.Brush.Source != source) tile.CaretMask.Brush.Source = source;
+            if (tile.CaretMask.SourceVisual.Brush != source) tile.CaretMask.SourceVisual.Brush = source;
             source = tile.CaretMask.Brush;
         }
         if (tile.Visual.Brush != source) tile.Visual.Brush = source;
@@ -506,7 +518,7 @@ internal sealed class CompositionBackend : IDisposable
             _caretMask ??= CreateCaretMask(new Vector2(_width, _height));
             var center = new Vector2(caret.X - _left, caret.Y - _top);
             if (_caretMask.Gradient.EllipseCenter != center) _caretMask.Gradient.EllipseCenter = center;
-            if (_caretMask.Brush.Source != source) _caretMask.Brush.Source = source;
+            if (_caretMask.SourceVisual.Brush != source) _caretMask.SourceVisual.Brush = source;
             source = _caretMask.Brush;
         }
         if (_result.Brush != source) _result.Brush = source;

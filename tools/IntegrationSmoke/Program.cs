@@ -578,16 +578,16 @@ internal static class Program
                     var t = tile.GetType();
                     var extra = t.GetField("CaretMask")!.GetValue(tile);
                     if (extra == null || !(bool)t.GetField("MaskApplied")!.GetValue(tile)!) continue;
-                    var brush = (Windows.UI.Composition.CompositionMaskBrush)extra.GetType().GetField("Brush")!.GetValue(extra)!;
-                    if (brush.Source == t.GetField("MaskBrush")!.GetValue(tile)) both = true;
+                    var source = (Windows.UI.Composition.SpriteVisual)extra.GetType().GetField("SourceVisual")!.GetValue(extra)!;
+                    if (source.Brush == (Windows.UI.Composition.CompositionBrush)t.GetField("MaskBrush")!.GetValue(tile)!) both = true;
                 }
                 if (!both) throw new Exception("Tiled mouse and caret masks were not combined.");
             }
             else
             {
                 var extra = type.GetField("_caretMask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
-                var brush = (Windows.UI.Composition.CompositionMaskBrush)extra.GetType().GetField("Brush")!.GetValue(extra)!;
-                if (brush.Source != type.GetField("_maskedBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend))
+                var source = (Windows.UI.Composition.SpriteVisual)extra.GetType().GetField("SourceVisual")!.GetValue(extra)!;
+                if (source.Brush != (Windows.UI.Composition.CompositionBrush)type.GetField("_maskedBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!)
                     throw new Exception("Whole-monitor mouse and caret masks were not combined.");
             }
             setCaret.Invoke(window, new object?[] { null });
