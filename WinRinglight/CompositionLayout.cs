@@ -12,16 +12,16 @@ public static class CompositionLayout
 
     // A bounding box alone places an edge outside shorter/misaligned monitors.
     // Prefer the common band across the shorter axis when such a band exists.
-    public static Rectangle SpannedBounds(IReadOnlyList<Display> displays)
+    public static Rectangle SpannedBounds(IReadOnlyList<Display> displays, bool fullscreen = false)
     {
         if (displays.Count == 0) return Rectangle.Empty;
-        Rectangle union = displays[0].WorkingArea;
+        Rectangle union = fullscreen ? displays[0].Bounds : displays[0].WorkingArea;
         int commonLeft = union.Left, commonRight = union.Right, commonTop = union.Top, commonBottom = union.Bottom;
         long minCx = (long)displays[0].Bounds.Left + displays[0].Bounds.Right, maxCx = minCx;
         long minCy = (long)displays[0].Bounds.Top + displays[0].Bounds.Bottom, maxCy = minCy;
         for (int i = 1; i < displays.Count; i++)
         {
-            var area = displays[i].WorkingArea;
+            var area = fullscreen ? displays[i].Bounds : displays[i].WorkingArea;
             union = Rectangle.Union(union, area);
             commonLeft = Math.Max(commonLeft, area.Left); commonRight = Math.Min(commonRight, area.Right);
             commonTop = Math.Max(commonTop, area.Top); commonBottom = Math.Min(commonBottom, area.Bottom);
@@ -44,6 +44,7 @@ public static class CompositionLayout
         if (displays.Count == 0) return Array.Empty<Piece>();
         if (spanned)
         {
+            bool useFullBounds = fullscreen.Count > 0;
             var pieces = new List<Piece>();
             for (int i = 0; i < displays.Count; i++)
             {
@@ -61,7 +62,7 @@ public static class CompositionLayout
                     left |= other.Right <= display.Bounds.Left;
                     right |= other.Left >= display.Bounds.Right;
                 }
-                pieces.Add(new Piece(display.Bounds, display.WorkingArea, left, right));
+                pieces.Add(new Piece(display.Bounds, useFullBounds ? display.Bounds : display.WorkingArea, left, right));
             }
             return pieces.ToArray();
         }

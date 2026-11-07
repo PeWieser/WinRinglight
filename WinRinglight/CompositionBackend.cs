@@ -71,14 +71,23 @@ internal sealed class CompositionBackend : IDisposable
             _compositor = new Compositor();
             _target = CreateTarget(_compositor, _hwnd);
             Vector2 size = new(_width, _height);
+            // Rasterise the vector ring at higher resolution before downsampling.
+            // Bound each surface dimension to avoid excessive allocation on 4K+
+            // displays; the cursor mask stays at native resolution.
+            float sampleScale = Math.Max(1f, Math.Min(2f, 4096f / Math.Max(_width, _height)));
             _ring = Keep(_compositor.CreateShapeVisual());
             _ring.Size = size;
+            _ring.Scale = new Vector3(sampleScale, sampleScale, 1);
             SetRing(thickness, rounded, kelvin);
+            var supersampledRoot = Keep(_compositor.CreateContainerVisual());
+            supersampledRoot.Size = size * sampleScale;
+            supersampledRoot.Children.InsertAtTop(_ring);
             var ringSurface = Keep(_compositor.CreateVisualSurface());
-            ringSurface.SourceVisual = _ring;
-            ringSurface.SourceSize = size;
+            ringSurface.SourceVisual = supersampledRoot;
+            ringSurface.SourceSize = size * sampleScale;
             var ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
-            ringBrush.Stretch = CompositionStretch.None;
+            ringBrush.Stretch = CompositionStretch.Fill;
+            ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
 
             _gradient = Keep(_compositor.CreateRadialGradientBrush());
             _gradient.MappingMode = CompositionMappingMode.Absolute;
@@ -154,21 +163,6 @@ internal sealed class CompositionBackend : IDisposable
                 var shape = KeepRing(_compositor.CreateSpriteShape(contour));
                 shape.StrokeBrush = brush;
                 shape.StrokeThickness = 2 * blur * fraction;
-                _ring.Shapes.Add(shape);
-            }
-        }
-        // Subpixel-width, translucent skirts soften the rasterised inner and
-        // outer edge of the solid stroke without supersampling a full monitor
-        // surface. They do not replace the separately controlled subtle glow.
-        foreach (var edge in new[] { (spread: 3f, alpha: (byte)30), (spread: 2f, alpha: (byte)65), (spread: 1f, alpha: (byte)110) })
-        {
-            var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(edge.alpha, color.R, color.G, color.B)));
-            _haloBrushes.Add(brush);
-            foreach (var contour in new[] { _outerGeometry, _innerGeometry })
-            {
-                var shape = KeepRing(_compositor.CreateSpriteShape(contour));
-                shape.StrokeBrush = brush;
-                shape.StrokeThickness = edge.spread * _dpiScale;
                 _ring.Shapes.Add(shape);
             }
         }

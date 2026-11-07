@@ -27,10 +27,13 @@ internal static class Program
         var fullscreen = CompositionLayout.Build(displays, false, new[] { 0, 1 }, new HashSet<int> { 1 });
         if (fullscreen.Length != 2 || fullscreen[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea) || fullscreen[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].Bounds))
             throw new Exception("Composition fullscreen layout failed.");
-        var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), new HashSet<int> { 0, 1 });
+        var span = CompositionLayout.Build(displays, true, Array.Empty<int>(), new HashSet<int>());
         if (span.Length != 2 || span[0] != new CompositionLayout.Piece(displays[0].Bounds, displays[0].WorkingArea, false, true) ||
             span[1] != new CompositionLayout.Piece(displays[1].Bounds, displays[1].WorkingArea, true, false))
             throw new Exception("Composition full-height spanned layout failed.");
+        var spanFullscreen = CompositionLayout.Build(displays, true, Array.Empty<int>(), new HashSet<int> { 1 });
+        if (spanFullscreen.Length != 2 || spanFullscreen[0].Ring != displays[0].Bounds || spanFullscreen[1].Ring != displays[1].Bounds)
+            throw new Exception("Spanned fullscreen must use every monitor's full bounds.");
         if (CompositionLayout.Build(displays, false, Array.Empty<int>(), new HashSet<int>()).Length != 0 ||
             CompositionLayout.Build(Array.Empty<CompositionLayout.Display>(), true, Array.Empty<int>(), new HashSet<int>()).Length != 0)
             throw new Exception("Composition empty display layout failed.");

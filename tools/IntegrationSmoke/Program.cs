@@ -231,6 +231,15 @@ internal static class Program
         Config.Current.IsSpanned = true;
         window.UpdateMonitorSetup();
         if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Spanned mode failed.");
+        AssertRingBounds(window, screens[0].WorkingArea);
+        fullscreenSet.Add(screens[0].DeviceName);
+        window.UpdateMonitorSetup();
+        if (!window.DevCompositionActive) throw new Exception("Spanned fullscreen caused fallback.");
+        AssertRingBounds(window, screens[0].Bounds);
+        fullscreenSet.Clear();
+        window.UpdateMonitorSetup();
+        AssertRingBounds(window, screens[0].WorkingArea);
+        Console.WriteLine("PASS: Spanned mode enters and exits fullscreen bounds.");
         Config.Current.IsSpanned = false;
         Config.Current.SelectedMonitors.Clear();
         window.UpdateMonitorSetup();

@@ -711,7 +711,7 @@ namespace WinRinglight
                 var displays = new CompositionLayout.Display[screens.Length];
                 for (int i = 0; i < screens.Length; i++)
                     displays[i] = new CompositionLayout.Display(screens[i].Bounds, screens[i].WorkingArea);
-                var span = CompositionLayout.SpannedBounds(displays);
+                var span = CompositionLayout.SpannedBounds(displays, _fullscreenMonitors.Count > 0);
                 if (span.Width > 0 && span.Height > 0)
                     targetRects.Add(new Rect(span.Left - SystemParameters.VirtualScreenLeft,
                         span.Top - SystemParameters.VirtualScreenTop, span.Width, span.Height));
