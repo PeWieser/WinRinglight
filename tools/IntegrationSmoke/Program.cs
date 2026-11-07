@@ -237,11 +237,33 @@ internal static class Program
             if (!GetWindowDisplayAffinity(hwnd, out uint affinity) || affinity != 0x11)
                 throw new Exception("Capture exclusion missing on a multi-window scene.");
         }
+        // The same screen cursor must be mapped to each window's local coordinates.
+        if (GetCursorPos(out Point original) && SetCursorPos(area.Left + area.Width / 3, area.Top + area.Height / 3) && GetCursorPos(out Point moved))
+        {
+            scene.GetType().GetMethod("UpdateCursor")!.Invoke(scene, null);
+            for (int i = 0; i < 2; i++)
+            {
+                var backend = windows[i]!;
+                var gradient = (Windows.UI.Composition.CompositionRadialGradientBrush)backend.GetType().GetField("_gradient", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                var bounds = i == 0 ? left : right;
+                if (Math.Abs(gradient.EllipseCenter.X - (moved.X - bounds.Left)) > 0.01 || Math.Abs(gradient.EllipseCenter.Y - (moved.Y - bounds.Top)) > 0.01)
+                    throw new Exception("Cursor coordinates differ across Composition windows.");
+            }
+            SetCursorPos(original.X, original.Y);
+        }
+        else Console.WriteLine("PARTIAL: Multi-window cursor positioning unavailable.");
+        // Simulate an affinity failure on one of the two HWNDs. All windows
+        // must be removed and WPF restored, not just the failing window.
+        IntPtr first = (IntPtr)windows[0]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
+        IntPtr second = (IntPtr)windows[1]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
+        DestroyWindow(second);
         Config.Current.HideFromCapture = false;
         window.ApplyCaptureAffinity();
-        window.UpdateMonitorSetup();
+        if (window.DevCompositionActive || IsWindow(first) || IsWindow(second) || ((Grid)window.FindName("MainGrid")).Visibility != Visibility.Visible)
+            throw new Exception("Capture failure did not clean up the complete scene and restore WPF.");
+        window.SetCompositionExperiment(true);
         if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Returning to real monitor layout failed.");
-        Console.WriteLine("PASS: Fullscreen/working area, spanning, empty selection, reselection and two-HWND scene with capture exclusion.");
+        Console.WriteLine("PASS: Fullscreen/working area, spanning, empty selection, reselection, two-HWND cursor/capture and failure cleanup.");
     }
 
     private static void AssertBounds(IntPtr hwnd, System.Drawing.Rectangle expected)
@@ -265,6 +287,8 @@ internal static class Program
         Dispatcher.PushFrame(frame);
     }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
     [DllImport("user32.dll")] private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);

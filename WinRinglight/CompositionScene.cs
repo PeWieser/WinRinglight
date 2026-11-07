@@ -23,10 +23,10 @@ internal sealed class CompositionScene : IDisposable
         }
         catch
         {
-            foreach (var window in replacements) window.Dispose();
+            foreach (var window in replacements) SafeDispose(window);
             throw;
         }
-        foreach (var window in _windows) window.Dispose();
+        foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
         _windows.AddRange(replacements);
         _layout = (Rectangle[])layout.Clone();
@@ -55,9 +55,15 @@ internal sealed class CompositionScene : IDisposable
         foreach (var window in _windows) success &= window.SetCaptureExcluded(value);
         return success;
     }
+    private static void SafeDispose(CompositionBackend window)
+    {
+        try { window.Dispose(); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition window cleanup: " + ex); }
+    }
+
     public void Dispose()
     {
-        foreach (var window in _windows) window.Dispose();
+        foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
         _layout = Array.Empty<Rectangle>();
     }

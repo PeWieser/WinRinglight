@@ -219,16 +219,39 @@ internal sealed class CompositionBackend : IDisposable
 
     public void Dispose()
     {
-        if (_target != null) { _target.Root = null; _target.Dispose(); _target = null; }
-        if (_ring != null) _ring.Shapes.Clear();
-        for (int i = _ringObjects.Count - 1; i >= 0; i--) _ringObjects[i].Dispose();
-        _ringObjects.Clear();
-        for (int i = _objects.Count - 1; i >= 0; i--) _objects[i].Dispose();
-        _objects.Clear();
-        _gradient = null; _ring = null; _result = null; _geometry = null;
-        _haloBrushes.Clear(); _coreBrush = null;
-        _compositor?.Dispose(); _compositor = null;
-        if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+        // A failure while releasing one COM object must never leave this or
+        // another overlay HWND visible after a failed scene reconfiguration.
+        try
+        {
+            if (_target != null)
+            {
+                try { _target.Root = null; } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
+                DisposeSafely(_target);
+                _target = null;
+            }
+            if (_ring != null)
+            {
+                try { _ring.Shapes.Clear(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
+            }
+            for (int i = _ringObjects.Count - 1; i >= 0; i--) DisposeSafely(_ringObjects[i]);
+            _ringObjects.Clear();
+            for (int i = _objects.Count - 1; i >= 0; i--) DisposeSafely(_objects[i]);
+            _objects.Clear();
+            _gradient = null; _ring = null; _result = null; _geometry = null;
+            _haloBrushes.Clear(); _coreBrush = null;
+            if (_compositor != null) DisposeSafely(_compositor);
+            _compositor = null;
+        }
+        finally
+        {
+            if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+        }
+    }
+
+    private static void DisposeSafely(IDisposable value)
+    {
+        try { value.Dispose(); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition cleanup: " + ex); }
     }
 
     private static void EnsureDispatcherQueue()
