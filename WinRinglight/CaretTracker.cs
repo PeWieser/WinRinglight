@@ -190,13 +190,6 @@ internal sealed class CaretTracker : IDisposable
                 double Dist(Point p) => Math.Pow((double)p.X - previous.Value.X, 2) + Math.Pow((double)p.Y - previous.Value.Y, 2);
                 return Dist(a.Value) <= Dist(b.Value) ? a : b;
             }
-            // Some providers report the whole field for a degenerate range;
-            // only trust a narrow rectangle as an actual caret.
-            if (direct.Length > 0 && !direct[0].IsEmpty && direct[0].Width <= Math.Max(4, direct[0].Height / 2))
-            {
-                var position = ToPoint(direct[0].Left, direct[0].Top, direct[0].Height);
-                if (position != null) return position;
-            }
             var forward = selection.Clone();
             if (forward.MoveEndpointByUnit(TextPatternRangeEndpoint.End, TextUnit.Character, 1) != 0)
             {
@@ -213,6 +206,11 @@ internal sealed class CaretTracker : IDisposable
                     return ToPoint(rect.Right, rect.Top, rect.Height);
                 }
             }
+            // Some Chromium UIA providers give a fixed location for a
+            // degenerate caret range. Only use its rectangle as a last resort
+            // when no neighbouring character geometry is available.
+            if (direct.Length > 0 && !direct[0].IsEmpty && direct[0].Width <= Math.Max(4, direct[0].Height / 2))
+                return ToPoint(direct[0].Left, direct[0].Top, direct[0].Height);
         }
         catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { }
         return null;
