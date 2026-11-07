@@ -27,3 +27,8 @@ CI-Lauf 42391559690 prüfte das neue Spannlayout mit unterschiedlich hohen, kün
 ## Ringauflösung und Spann-Vollbild
 - Im Dev-Tab ist optional höher aufgelöstes Composition-Raster (bis 2×, für große Flächen begrenzt) zuschaltbar. Standard bleibt native Auflösung und 60-Hz-Cursorziel. Die zusätzliche Oberfläche kann deutlich mehr GPU-Speicher und Leistung beanspruchen.
 - Windows-CI 42393487945: tatsächlicher Vollbild-Testprozess in normalem und gespanntem Modus erfolgreich; Schalter 1×/2×, Auswahl, Capture, Hit-Test und Cursorpfade bestanden. Eine Rasterprobe gegen WPF auf dem CI-Desktop zeigte bei 1× und 2× identische Stichproben (je mittlerer RGB-Kanalfehler 2,676663); eine Qualitätsverbesserung ist damit ausdrücklich nicht nachgewiesen. Reale Monitor-, GPU- und optische Abnahme steht aus.
+
+## Cursorlast bei mehreren Monitoren
+Composition prüft für jedes Monitorfenster, ob der Cursor-Aussparungskreis dessen Fläche erreicht. Außerhalb wird der unveränderte Ring direkt statt über eine MaskBrush verwendet und dessen Gradient nicht bei Cursorbewegungen geändert. An Kanten, Ecken und bei überlappenden Monitoren bleiben alle betroffenen Masken aktiv. Keine Totzone und keine FPS-Absenkung. Der DWM kann trotzdem weitere Flächen verarbeiten; echte GPU-Ersparnis ist hardwareabhängig.
+
+Windows-Lauf 42405275097: Tests für Kreis/Rechteck-Grenzen, negative Koordinaten, unbeeinflussten Monitor, Überlappung am Übergang und 1-Pixel-Bewegung erfolgreich; optischer Desktop-Pixelvergleich zwischen direktem Ring und vollständig deckender Maske ohne Abweichung in der Stichprobe. Keine Messung der GPU-Last.
