@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
-using System.Windows.Automation;
-using System.Windows.Automation.Text;
 using System.Windows.Threading;
 
 namespace WinRinglight;
@@ -87,32 +85,78 @@ internal sealed class CaretTracker : IDisposable
     private static Point? FindCaret(IntPtr foreground)
     {
         if (foreground == IntPtr.Zero) return null;
-        // UI Automation works with many modern controls (including browsers).
-        // GetCaretRange returns only geometry, not the text around the caret.
-        try
-        {
-            var focused = AutomationElement.FocusedElement;
-            if (focused != null && focused.TryGetCurrentPattern(TextPattern2.Pattern, out object value))
-            {
-                var range = ((TextPattern2)value).GetCaretRange(out bool active);
-                if (active && range != null)
-                {
-                    var rects = range.GetBoundingRectangles();
-                    if (rects.Length > 0 && !rects[0].IsEmpty && double.IsFinite(rects[0].X) && double.IsFinite(rects[0].Y))
-                        return new Point((int)Math.Round(rects[0].X), (int)Math.Round(rects[0].Y + rects[0].Height / 2));
-                }
-                // An inactive range must not leave an old cutout visible.
-                return null;
-            }
-        }
-        catch (ElementNotAvailableException) { return null; }
-        catch (System.Runtime.InteropServices.COMException) { return null; }
+        // Native UI Automation TextPattern2 provides caret geometry in modern controls.
+        // The managed WPF UIA wrapper does not expose this pattern.
+        var modern = FindAutomationCaret(out bool supported);
+        if (supported) return modern;
         // Classic Win32 edit controls may expose only the GUI-thread caret.
         uint thread = GetWindowThreadProcessId(foreground, out _);
         var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
         if (thread == 0 || !GetGUIThreadInfo(thread, ref info) || info.Caret == IntPtr.Zero || info.Focus == IntPtr.Zero) return null;
         var p = new NativePoint { X = info.Rect.Left, Y = (info.Rect.Top + info.Rect.Bottom) / 2 };
         return ClientToScreen(info.Caret, ref p) ? new Point(p.X, p.Y) : null;
+    }
+
+    private static Point? FindAutomationCaret(out bool supported)
+    {
+        supported = false;
+        object? automationObject = null;
+        IAutomationElement? element = null;
+        ITextPattern2? pattern = null;
+        ITextRange? range = null;
+        try
+        {
+            automationObject = new CUIAutomation8();
+            ((IAutomation)automationObject).GetFocusedElement(out element);
+            if (element == null) return null;
+            Guid iid = typeof(ITextPattern2).GUID;
+            element.GetCurrentPatternAs(10024, ref iid, out pattern);
+            if (pattern == null) return null;
+            supported = true;
+            pattern.GetCaretRange(out int active, out range);
+            if (active == 0 || range == null) return null;
+            range.GetBoundingRectangles(out double[] rects);
+            if (rects == null || rects.Length < 4 || !double.IsFinite(rects[0]) || !double.IsFinite(rects[1]) || !double.IsFinite(rects[3])) return null;
+            return new Point((int)Math.Round(rects[0]), (int)Math.Round(rects[1] + rects[3] / 2));
+        }
+        catch (COMException) { supported = false; return null; }
+        finally
+        {
+            if (range != null) Marshal.ReleaseComObject(range);
+            if (pattern != null) Marshal.ReleaseComObject(pattern);
+            if (element != null) Marshal.ReleaseComObject(element);
+            if (automationObject != null) Marshal.ReleaseComObject(automationObject);
+        }
+    }
+
+    // Method order follows the Windows SDK UIAutomationClient.h vtables.
+    [ComImport, Guid("e22ad333-b25f-460c-83d0-0581107395c9")] private class CUIAutomation8 { }
+    [ComImport, Guid("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAutomation
+    {
+        void CompareElements(); void CompareRuntimeIds(); void GetRootElement(); void ElementFromHandle(); void ElementFromPoint();
+        void GetFocusedElement(out IAutomationElement element);
+    }
+    [ComImport, Guid("d22108aa-8ac5-49a5-837b-37bbb3d7591e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAutomationElement
+    {
+        void SetFocus(); void GetRuntimeId(); void FindFirst(); void FindAll(); void FindFirstBuildCache();
+        void FindAllBuildCache(); void BuildUpdatedCache(); void GetCurrentPropertyValue(); void GetCurrentPropertyValueEx();
+        void GetCachedPropertyValue(); void GetCachedPropertyValueEx();
+        void GetCurrentPatternAs(int patternId, ref Guid iid, out ITextPattern2 pattern);
+    }
+    [ComImport, Guid("506a921a-fcc9-409f-b23b-37eb74106872"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITextPattern2
+    {
+        void RangeFromPoint(); void RangeFromChild(); void GetSelection(); void GetVisibleRanges();
+        void GetDocumentRange(); void GetSupportedTextSelection(); void RangeFromAnnotation();
+        void GetCaretRange(out int active, out ITextRange range);
+    }
+    [ComImport, Guid("a543cc6a-f4ae-494b-8239-c814481187a8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITextRange
+    {
+        void Clone(); void Compare(); void CompareEndpoints(); void ExpandToEnclosingUnit(); void FindAttribute(); void FindText(); void GetAttributeValue();
+        void GetBoundingRectangles([MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_R8)] out double[] rectangles);
     }
 
     public void Dispose() { _enabled = false; _disposed = true; _expiry.Stop(); Publish(null); }
