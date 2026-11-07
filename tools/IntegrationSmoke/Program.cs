@@ -236,7 +236,7 @@ internal static class Program
         var area = screens[0].WorkingArea;
         var left = new System.Drawing.Rectangle(area.Left, area.Top, area.Width / 2, area.Height);
         var right = new System.Drawing.Rectangle(left.Right, area.Top, area.Width - left.Width, area.Height);
-        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] { new[] { new CompositionLayout.Piece(left, left), new CompositionLayout.Piece(right, right) }, 300f,
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] { new[] { new CompositionLayout.Piece(left, area), new CompositionLayout.Piece(right, area) }, 300f,
             (float)Config.Current.Thickness, true, 4000d, true, true });
         var windows = GetWindows(window);
         if (windows.Count != 2) throw new Exception("Two-window scene was not created.");
@@ -248,6 +248,25 @@ internal static class Program
             if (!GetWindowDisplayAffinity(hwnd, out uint affinity) || affinity != 0x11)
                 throw new Exception("Capture exclusion missing on a multi-window scene.");
         }
+        var g0 = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)windows[0]!.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
+        var g1 = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)windows[1]!.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
+        if (Math.Abs((g0.Offset.X + left.Left) - (g1.Offset.X + right.Left)) > 0.01 ||
+            Math.Abs((g0.Offset.Y + left.Top) - (g1.Offset.Y + right.Top)) > 0.01 || g0.Size != g1.Size || g0.CornerRadius != g1.CornerRadius)
+            throw new Exception("Spanned pieces do not share the same global ring geometry.");
+        IntPtr firstBeforeAnimation = (IntPtr)windows[0]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
+        var changedRing = new System.Drawing.Rectangle(area.Left, area.Top, area.Width, area.Height - 30);
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] {
+            new[] { new CompositionLayout.Piece(left, changedRing), new CompositionLayout.Piece(right, changedRing) }, 300f,
+            (float)Config.Current.Thickness, true, 4000d, true, true });
+        if ((IntPtr)windows[0]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])! != firstBeforeAnimation ||
+            g0.TryGetAnimationController("Offset") == null || g0.TryGetAnimationController("Size") == null || g1.TryGetAnimationController("Size") == null)
+            throw new Exception("Layout change replaced windows or failed to start geometry animations.");
+        var visual = (Windows.UI.Composition.SpriteVisual)windows[0]!.GetType().GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
+        scene.GetType().GetMethod("SetVisible")!.Invoke(scene, new object[] { false });
+        if (visual.TryGetAnimationController("Opacity") == null) throw new Exception("Fade animation did not start.");
+        scene.GetType().GetMethod("SetVisible")!.Invoke(scene, new object[] { true });
+        if (visual.TryGetAnimationController("Opacity") == null) throw new Exception("Reversed fade animation did not start.");
+        Console.WriteLine("PASS: Spanned pieces share global geometry and layout/fade animation controllers start without window recreation.");
         // The same screen cursor must be mapped to each window's local coordinates.
         if (GetCursorPos(out Point original) && SetCursorPos(area.Left + area.Width / 3, area.Top + area.Height / 3) && GetCursorPos(out Point moved))
         {

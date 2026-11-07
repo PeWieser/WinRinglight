@@ -179,7 +179,14 @@ internal sealed class CompositionBackend : IDisposable
     {
         if (_ringBounds == ringBounds) return;
         _ringBounds = ringBounds;
-        if (_geometry != null) SetGeometry(_geometry, (float)_currentThickness, _currentRounded, animate);
+        if (_geometry != null)
+        {
+            // WPF only changes the corner radius on style changes, not during
+            // a working-area/fullscreen layout transition.
+            Vector2 oldRadius = _geometry.CornerRadius;
+            SetGeometry(_geometry, (float)_currentThickness, _currentRounded, animate);
+            _geometry.CornerRadius = oldRadius;
+        }
     }
 
     // QuadraticEase(EaseInOut), exactly as the WPF animations: two quadratic
