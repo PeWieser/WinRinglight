@@ -756,7 +756,16 @@ internal static class Program
                 var args = new object?[] { false };
                 var modern = trackerType.GetMethod("FindAutomationCaret", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args);
                 var legacy = trackerType.GetMethod("FindLegacyCaret", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, new object?[] { System.Windows.Automation.AutomationElement.FocusedElement, beginning });
-                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}.");
+                var focus = System.Windows.Automation.AutomationElement.FocusedElement;
+                string detail = "";
+                if (focus.TryGetCurrentPattern(System.Windows.Automation.ValuePattern.Pattern, out object val))
+                    detail += $"value={( (System.Windows.Automation.ValuePattern)val).Current.Value}; ";
+                if (focus.TryGetCurrentPattern(System.Windows.Automation.TextPattern.Pattern, out object txt))
+                {
+                    var sels = ((System.Windows.Automation.TextPattern)txt).GetSelection();
+                    foreach (var sel in sels) detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
+                }
+                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}, focus={focus.Current.Name} {detail}.");
             }
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
