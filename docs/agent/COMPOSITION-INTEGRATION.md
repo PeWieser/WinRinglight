@@ -10,7 +10,7 @@ Der separat getestete Prototyp (9d1c54f) wurde vom Nutzer auf einem Full-HD-Haup
 - Ein Rendering-Backend darf nicht gleichzeitig mit dem anderen sichtbar sein. 60 FPS Cursor-Ziel, ein gemeinsamer Cursor-Takt; keine Totzone.
 
 ## Funktionsmatrix / Etappen
-1. **Grundlage und Fallback:** Backend an die bestehende App und Dev-UI anschließen. Nur ein physischer Monitor und nicht gespannter Modus für Composition freigeben; andere Aufbauten bleiben auf WPF. Fehler und Umschaltung transparent anzeigen. Overlay-HWND und Composition-Objekte sicher aufräumen.
+1. **Grundlage und Fallback:** Backend an die bestehende App und Dev-UI anschließen. Nur ein physischer Monitor für Composition freigeben (bei einem Monitor auch gespannter Modus); andere Aufbauten bleiben auf WPF. Fehler und Umschaltung transparent anzeigen. Overlay-HWND und Composition-Objekte sicher aufräumen.
 2. **Funktionen des Ein-Monitor-Pfads:** Ring ein/aus und Fade, Farbe und 0,5-s-Übergang, beide Stile, Dicke, FPS-Einstellung, Capture-Ausschluss, Cursor-Position und Fensterposition. Tray, Hotkey und Webcam sollen unverändert dieselbe Zustandssteuerung benutzen. Taskleisten-/Vollbildwechsel und Style-Animation dürfen nicht stillschweigend verloren gehen: bis gleichwertig implementiert, in diesen Fällen WPF-Fallback.
 3. **Windows-Tests:** Build beider Projekte, automatisierte Tests für Auswahl-/Fallbacklogik und Temperatur; manuelle Tests des echten Desktop-Overlays: Klickdurchleitung, Escape/Beenden, Neustart, Capture ein/aus, Schalterwechsel, Farben, Dicke, Tastenkürzel, Webcam und Taskleiste/Vollbild. GPU/CPU/Frametimes vergleichen.
 4. **Mehrmonitor und DPI:** negative Koordinaten, ausgewählte und gespannte Displays, unterschiedliche Auflösungen und Skalierung, Hotplug. Koordinatenmodelle explizit testen. Bis dahin WPF-Fallback.
@@ -22,6 +22,10 @@ WPF hat heute selbst Grenzfälle bei gemischter DPI; Fallback bewahrt vorhandene
 - Dev-Schalter aktiviert Composition nur bei Windows >= 1903, genau einem Monitor (ausgewählt oder gespannt), 100 % DPI, nicht Vollbild. Keine automatische Speicherung; Start bleibt WPF.
 - Composition erhält WPF-Cursor-Takt und -Einstellungen, Ringdicke, Stil beim Aktivieren, aktuelle und animierte Temperatur, Ein-/Aus-Animation sowie Capture-Einstellung. Bei Monitor-/Vollbildänderung oder Stilwechsel wird ausdrücklich zu WPF zurückgeschaltet, um die vorhandenen Übergänge zu bewahren; der Schalter muss danach erneut aktiviert werden. Status steht im Dev-Tab.
 - Bei Initialisierungs-, Render- oder Capture-Affinity-Fehler WPF-Fallback. Capture-Ausschluss wird vor dem Anzeigen des Composition-Fensters gesetzt. Eingeschaltete WPF-Caching-/Glow-Diagnosen betreffen weiterhin nur den WPF-Renderer.
-- Einschränkung: Mit dem Windows-SDK-Target `net10.0-windows10.0.19041.0` und `SupportedOSPlatformVersion=10.0.17763.0` ist ältere Windows-Kompatibilität ein gesonderter Abnahmepunkt. Auf Desktop, auch beim Toggle und schnellen Wechseln von Capture/Einstellungen, noch nicht getestet.
+- Einschränkung: Mit dem Windows-SDK-Target `net10.0-windows10.0.19041.0` und `SupportedOSPlatformVersion=10.0.17763.0` ist ältere Windows-Kompatibilität ein gesonderter Abnahmepunkt. Kompatibilität älterer Windows-Versionen und Capture in realen Aufnahme-Apps sind noch nicht praktisch getestet.
 
 - Cursor-Masken und Farbe werden im Composition-Betrieb nicht länger auf dem verborgenen WPF-Overlay neu gesetzt; beim Rückfall wird WPF wieder synchronisiert. Windows-Integration-Smoke prüft Aktivierung und Rückfall, sofern ein geeigneter Desktop verfügbar ist.
+
+## Automatisierter Windows-Stand
+- Lauf 42316878568: Build und Publish beider Programme, Glow-/Temperatur- und Auswahltests erfolgreich. Der interaktive CI-Desktop bestätigte Composition-Aktivierung, Isolierung der WPF-Maske, Rückfall und Reaktivierung, Temperatur-Slider und Übergang, FPS-Modi, Fenster-Flags und einen Hit-Test sowie Setzen/Auslesen der Capture-Affinität.
+- Keine echte Aufnahme, visuelle Abnahme, GPU-/CPU-/Frametime-Messung, Webcam, Hotkey oder Mehrmonitorprüfung. Stil-, Monitor- und Vollbildänderungen bleiben bewusste WPF-Fallbacks.
