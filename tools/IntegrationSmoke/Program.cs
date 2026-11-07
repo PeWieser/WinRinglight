@@ -651,10 +651,14 @@ internal static class Program
             }
             if (field.GetValue(window) is not System.Drawing.Point caret || !screen.WorkingArea.Contains(caret))
                 throw new Exception("Focused external text caret was not detected on the expected screen.");
+            for (int i = 0; i < 4; i++) { keybd_event(0x25, 0, 0, UIntPtr.Zero); keybd_event(0x25, 0, 2, UIntPtr.Zero); }
+            for (int i = 0; i < 30 && Equals(field.GetValue(window), caret); i++) PumpFor(100);
+            if (field.GetValue(window) is not System.Drawing.Point moved || moved == caret)
+                throw new Exception($"Text caret movement was not tracked ({fixture}).");
             process.Kill(); process.WaitForExit();
             for (int i = 0; i < 30 && field.GetValue(window) != null; i++) PumpFor(100);
             if (field.GetValue(window) != null) throw new Exception("Caret position remained after focus loss.");
-            Console.WriteLine($"PASS: External focused text caret ({fixture}) detected and cleared on focus loss.");
+            Console.WriteLine($"PASS: External focused text caret ({fixture}) detected, moved and cleared on focus loss.");
         }
         finally
         {
@@ -828,6 +832,7 @@ internal static class Program
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
     [DllImport("dwmapi.dll")] private static extern int DwmFlush();
     [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);

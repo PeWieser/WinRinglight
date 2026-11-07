@@ -18,6 +18,9 @@ internal sealed class CaretTracker : IDisposable
     private readonly Action<Point?> _changed;
     private readonly DispatcherTimer _expiry;
     private Thread? _worker;
+    private readonly AutoResetEvent _wake = new(false);
+    private readonly System.Collections.Generic.List<IntPtr> _hooks = new();
+    private WinEventCallback? _eventCallback;
     private volatile bool _enabled, _disposed;
     private int _generation;
     private volatile int _intervalMs = 16;
@@ -33,14 +36,16 @@ internal sealed class CaretTracker : IDisposable
         _expiry.Stop();
     }
 
-    public void SetRate(int fps, bool unlimited) => _intervalMs = Math.Max(1, (int)Math.Round(1000.0 / (unlimited ? 240 : Math.Clamp(fps, 1, 240))));
+    public void SetRate(int fps, bool unlimited) => _intervalMs = unlimited ? 0 : Math.Max(1, (int)Math.Round(1000.0 / Math.Clamp(fps, 1, 240)));
 
     public void SetEnabled(bool enabled)
     {
         Interlocked.Increment(ref _generation);
         _enabled = enabled;
-        if (!enabled) { _expiry.Stop(); Publish(null); return; }
+        if (!enabled) { RemoveHooks(); _expiry.Stop(); Publish(null); _wake.Set(); return; }
+        InstallHooks();
         _expiry.Start();
+        _wake.Set();
         if (_worker != null) return;
         _worker = new Thread(Work) { IsBackground = true, Name = "Text caret position" };
         _worker.SetApartmentState(ApartmentState.MTA);
@@ -52,10 +57,19 @@ internal sealed class CaretTracker : IDisposable
         Point? previous = null;
         IntPtr previousForeground = IntPtr.Zero;
         int previousGeneration = -1, previousRefresh = -1;
+        long lastQuery = 0;
         while (!_disposed)
         {
+            // Event-driven in normal operation. A slow fallback check covers
+            // applications that do not send accessibility notifications.
+            _wake.WaitOne(500);
             if (_enabled)
             {
+                double elapsed = lastQuery == 0 ? double.MaxValue : Stopwatch.GetElapsedTime(lastQuery).TotalMilliseconds;
+                int remaining = _intervalMs - (int)Math.Min(elapsed, _intervalMs);
+                if (remaining > 0) Thread.Sleep(remaining);
+                if (!_enabled || _disposed) continue;
+                lastQuery = Stopwatch.GetTimestamp();
                 int generation = Volatile.Read(ref _generation);
                 IntPtr foreground = GetForegroundWindow();
                 long started = Stopwatch.GetTimestamp();
@@ -79,7 +93,6 @@ internal sealed class CaretTracker : IDisposable
                     }
                 }
             }
-            Thread.Sleep(_enabled ? _intervalMs : 150);
         }
     }
 
@@ -229,7 +242,40 @@ internal sealed class CaretTracker : IDisposable
         void GetBoundingRectangles([MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_R8)] out double[] rectangles);
     }
 
-    public void Dispose() { _enabled = false; _disposed = true; _expiry.Stop(); Publish(null); }
+    private void InstallHooks()
+    {
+        if (_hooks.Count != 0) return;
+        _eventCallback ??= OnWinEvent;
+        void Add(uint first, uint last)
+        {
+            IntPtr hook = SetWinEventHook(first, last, IntPtr.Zero, _eventCallback, 0, 0, 0);
+            if (hook != IntPtr.Zero) _hooks.Add(hook);
+        }
+        Add(3, 3);             // foreground
+        Add(0x8002, 0x800e);  // caret show/hide, focus, selection, location, value
+        Add(0x8014, 0x8014);  // text selection
+    }
+
+    private void OnWinEvent(IntPtr hook, uint evt, IntPtr hwnd, int objectId, int childId, uint thread, uint time)
+    {
+        if (!_enabled) return;
+        if (evt == 3) { _wake.Set(); return; }
+        if (hwnd == IntPtr.Zero || GetAncestor(hwnd, 2) != GetForegroundWindow()) return;
+        if (evt == 0x8005 || evt == 0x8006 || evt == 0x8009 || evt == 0x800e || evt == 0x8014 ||
+            (objectId == -8 && (evt == 0x8002 || evt == 0x8003 || evt == 0x800b))) _wake.Set();
+    }
+
+    private void RemoveHooks()
+    {
+        foreach (var hook in _hooks) UnhookWinEvent(hook);
+        _hooks.Clear();
+    }
+
+    public void Dispose() { _enabled = false; _disposed = true; RemoveHooks(); _wake.Set(); _expiry.Stop(); Publish(null); }
+    private delegate void WinEventCallback(IntPtr hook, uint evt, IntPtr hwnd, int objectId, int childId, uint thread, uint time);
+    [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint first, uint last, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
+    [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct GuiThreadInfo
