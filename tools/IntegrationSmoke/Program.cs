@@ -818,6 +818,11 @@ internal static class Program
                 ClientToScreen(info.Caret, ref native);
                 throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}, focus={focus.Current.Name}, foreground={fg:X}, main={process.MainWindowHandle:X}, native={ok}/{native.X},{native.Y} rect={info.Rect.Left},{info.Rect.Top},{info.Rect.Right},{info.Rect.Bottom} caret={info.Caret:X} {detail}.");
             }
+            Key(0x10, true);
+            for (int i = 0; i < 3; i++) { Key(0x25, true); Key(0x25, false); PumpFor(50); }
+            Key(0x10, false); PumpFor(700);
+            if (field.GetValue(window) is not System.Drawing.Point selected || selected.X >= end.X - 5)
+                throw new Exception($"Chrome selected text did not follow the active endpoint: end={end}, selection={field.GetValue(window)}.");
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
             Console.WriteLine("PASS: Chrome address bar caret tracks start/end and remains visible for selected text.");

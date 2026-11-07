@@ -18,6 +18,9 @@ internal sealed class CaretTracker : IDisposable
     private readonly Action<Point?> _changed;
     private readonly DispatcherTimer _expiry;
     private Thread? _worker;
+    private int _workerVersion, _workerCount, _queryVersion, _queryGeneration;
+    private long _queryStarted;
+    private IntPtr _queryForeground;
     private readonly AutoResetEvent _wake = new(false);
     private readonly System.Collections.Generic.List<IntPtr> _hooks = new();
     private WinEventCallback? _eventCallback;
@@ -51,20 +54,33 @@ internal sealed class CaretTracker : IDisposable
         InstallHooks();
         _expiry.Start();
         _wake.Set();
-        if (_worker != null) return;
-        _worker = new Thread(Work) { IsBackground = true, Name = "Text caret position" };
-        _worker.SetApartmentState(ApartmentState.MTA);
-        _worker.Start();
+        if (_worker == null || !_worker.IsAlive) StartWorker();
     }
 
-    private void Work()
+    private void StartWorker()
+    {
+        int version = Interlocked.Increment(ref _workerVersion);
+        Interlocked.Increment(ref _workerCount);
+        _worker = new Thread(() => Work(version)) { IsBackground = true, Name = "Text caret position" };
+        _worker.SetApartmentState(ApartmentState.MTA);
+        _worker.Start();
+        _wake.Set();
+    }
+
+    private void Work(int version)
+    {
+        try { WorkLoop(version); }
+        finally { Interlocked.Decrement(ref _workerCount); }
+    }
+
+    private void WorkLoop(int version)
     {
         Point? previous = null;
         IntPtr previousForeground = IntPtr.Zero;
         int previousGeneration = -1, previousRefresh = -1;
         var selectionState = new LegacySelectionState();
         long lastQuery = 0;
-        while (!_disposed)
+        while (!_disposed && version == Volatile.Read(ref _workerVersion))
         {
             // Accessibility events wake the worker immediately. Some browsers do
             // not emit reliable caret notifications, so sample at the chosen
@@ -75,15 +91,21 @@ internal sealed class CaretTracker : IDisposable
                 double elapsed = lastQuery == 0 ? double.MaxValue : Stopwatch.GetElapsedTime(lastQuery).TotalMilliseconds;
                 int remaining = _intervalMs - (int)Math.Min(elapsed, _intervalMs);
                 if (remaining > 0) Thread.Sleep(remaining);
-                if (!_enabled || _disposed) continue;
+                if (!_enabled || _disposed || version != Volatile.Read(ref _workerVersion)) continue;
                 lastQuery = Stopwatch.GetTimestamp();
                 int generation = Volatile.Read(ref _generation);
                 IntPtr foreground = GetForegroundWindow();
                 long started = Stopwatch.GetTimestamp();
                 Point? point = null;
+                Volatile.Write(ref _queryGeneration, generation);
+                Interlocked.Exchange(ref _queryForeground, foreground);
+                Interlocked.Exchange(ref _queryStarted, started);
+                Volatile.Write(ref _queryVersion, version);
                 if (foreground != previousForeground || generation != previousGeneration) selectionState = new LegacySelectionState();
                 try { point = FindCaret(foreground, foreground == previousForeground ? previous : null, selectionState); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
+                if (version != Volatile.Read(ref _workerVersion)) return;
+                Volatile.Write(ref _queryVersion, 0);
                 if (!_disposed && _enabled && generation == Volatile.Read(ref _generation) && foreground != IntPtr.Zero &&
                     foreground == GetForegroundWindow() && Stopwatch.GetElapsedTime(started) <= TimeSpan.FromSeconds(1))
                 {
@@ -95,7 +117,7 @@ internal sealed class CaretTracker : IDisposable
                         previous = point; previousForeground = foreground; previousGeneration = generation; previousRefresh = refresh;
                         if (!_dispatcher.HasShutdownStarted)
                         {
-                            try { _dispatcher.BeginInvoke(() => Accept(generation, foreground, started, point)); }
+                            try { _dispatcher.BeginInvoke(() => Accept(version, generation, foreground, started, point)); }
                             catch (InvalidOperationException) { }
                         }
                     }
@@ -104,16 +126,25 @@ internal sealed class CaretTracker : IDisposable
         }
     }
 
-    private void Accept(int generation, IntPtr foreground, long started, Point? point)
+    private void Accept(int version, int generation, IntPtr foreground, long started, Point? point)
     {
-        if (!_enabled || generation != Volatile.Read(ref _generation) || Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(1) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
+        if (!_enabled || version != Volatile.Read(ref _workerVersion) || generation != Volatile.Read(ref _generation) || Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(1) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
         _sampleForeground = foreground;
         Publish(point);
     }
 
     private void Expire()
     {
-        if ((_sampleForeground != GetForegroundWindow() || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromMilliseconds(Math.Max(1000, _intervalMs * 3 + 100))) && _lastPoint != null)
+        IntPtr foreground = GetForegroundWindow();
+        int version = Volatile.Read(ref _workerVersion);
+        // A foreign UIA provider can hang indefinitely. If it was querying a
+        // different app (or an obsolete enable generation), replace that worker
+        // without waiting for the hung COM call. Bound abandoned threads.
+        if (_enabled && Volatile.Read(ref _workerCount) < 3 && Volatile.Read(ref _queryVersion) == version &&
+            (Interlocked.CompareExchange(ref _queryForeground, IntPtr.Zero, IntPtr.Zero) != foreground || Volatile.Read(ref _queryGeneration) != Volatile.Read(ref _generation)) &&
+            Stopwatch.GetElapsedTime(Interlocked.Read(ref _queryStarted)) > TimeSpan.FromMilliseconds(200))
+            StartWorker();
+        if ((_sampleForeground != foreground || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromMilliseconds(Math.Max(1000, _intervalMs * 3 + 100))) && _lastPoint != null)
         {
             Interlocked.Increment(ref _refreshVersion);
             Publish(null);
