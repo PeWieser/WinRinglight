@@ -11,8 +11,18 @@ using WinRinglight;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--fullscreen-fixture")
+        {
+            var screen = System.Windows.Forms.Screen.PrimaryScreen!;
+            using var form = new System.Windows.Forms.Form { Text = "WinRinglight CI fullscreen fixture",
+                FormBorderStyle = System.Windows.Forms.FormBorderStyle.None, StartPosition = System.Windows.Forms.FormStartPosition.Manual,
+                Bounds = screen.Bounds, TopMost = true, ShowInTaskbar = true };
+            form.Shown += (_, _) => { form.Activate(); form.BringToFront(); };
+            System.Windows.Forms.Application.Run(form);
+            return 0;
+        }
         // This test manipulates and saves settings. Never run it on a user's machine.
         if (!string.Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true", StringComparison.OrdinalIgnoreCase))
         {
@@ -111,6 +121,7 @@ internal static class Program
             if (!window.DevCompositionActive) throw new Exception("Composition reactivation failed: " + window.DevCompositionStatus);
             TestSettings(window);
             TestLayouts(window, screens);
+            TestFullscreenDetector(window, screens);
             Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
         }
@@ -264,6 +275,38 @@ internal static class Program
         window.SetCompositionExperiment(true);
         if (!window.DevCompositionActive || GetWindows(window).Count != 1) throw new Exception("Returning to real monitor layout failed.");
         Console.WriteLine("PASS: Fullscreen/working area, spanning, empty selection, reselection, two-HWND cursor/capture and failure cleanup.");
+    }
+
+    private static void TestFullscreenDetector(MainWindow window, System.Windows.Forms.Screen[] screens)
+    {
+        if (screens.Length != 1 || Environment.ProcessPath == null ||
+            System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("SKIP: External fullscreen detector fixture requires a one-monitor apphost.");
+            return;
+        }
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--fullscreen-fixture")
+        { UseShellExecute = false, CreateNoWindow = true }) ?? throw new Exception("Could not start fullscreen fixture.");
+        var field = typeof(MainWindow).GetField("_isFullscreenActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        try
+        {
+            for (int i = 0; i < 30 && !(bool)field.GetValue(window)!; i++)
+            {
+                if (process.HasExited) throw new Exception("Fullscreen fixture exited unexpectedly.");
+                PumpFor(100);
+            }
+            if (!(bool)field.GetValue(window)! || !window.DevCompositionActive)
+                throw new Exception("Fullscreen detector did not activate Composition fullscreen layout.");
+            AssertBounds(GetCompositionHwnd(window), screens[0].Bounds);
+            process.Kill();
+            process.WaitForExit();
+            for (int i = 0; i < 30 && (bool)field.GetValue(window)!; i++) PumpFor(100);
+            if ((bool)field.GetValue(window)! || !window.DevCompositionActive)
+                throw new Exception("Fullscreen detector did not restore Composition working area.");
+            AssertBounds(GetCompositionHwnd(window), screens[0].WorkingArea);
+            Console.WriteLine("PASS: External fullscreen window triggers real detector and restores working area.");
+        }
+        finally { if (!process.HasExited) process.Kill(); }
     }
 
     private static void AssertBounds(IntPtr hwnd, System.Drawing.Rectangle expected)
