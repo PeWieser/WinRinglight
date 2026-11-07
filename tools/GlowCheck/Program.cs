@@ -16,6 +16,17 @@ internal static class Program
             TemperatureTransition.At(6000, 2000, -1) != 6000 ||
             TemperatureTransition.At(6000, 2000, 500) != 2000)
             throw new Exception("Temperature transition interpolation failed.");
+        int[] selected = { 0 };
+        if (!CompositionPolicy.CanUse(true, 1, false, selected, false, 1, 1) ||
+            !CompositionPolicy.CanUse(true, 1, true, Array.Empty<int>(), false, 1, 1) ||
+            CompositionPolicy.CanUse(false, 1, false, selected, false, 1, 1) ||
+            CompositionPolicy.CanUse(true, 2, false, selected, false, 1, 1) ||
+            CompositionPolicy.CanUse(true, 1, false, selected, true, 1, 1) ||
+            CompositionPolicy.CanUse(true, 1, false, selected, false, 1.25, 1) ||
+            CompositionPolicy.CanUse(true, 1, false, Array.Empty<int>(), false, 1, 1) ||
+            CompositionPolicy.CanUse(true, 1, false, new[] { 1 }, false, 1, 1))
+            throw new Exception("Composition eligibility policy failed.");
+        Console.WriteLine("Composition eligibility checks passed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {
             var halo = new GlowBorder { Width = 320, Height = 200,

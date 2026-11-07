@@ -555,19 +555,20 @@ namespace WinRinglight
                 _lastMouseX = _mousePt.X;
                 _lastMouseY = _mousePt.Y;
 
+                if (_compositionBackend != null)
+                {
+                    // Do not invalidate the full WPF mask while Composition is active.
+                    try { _compositionBackend.UpdateCursor(); }
+                    catch (Exception ex) { FailComposition(ex); }
+                    return;
+                }
+
                 IntPtr hwnd = new WindowInteropHelper(this).Handle;
                 Win32Point localPt = _mousePt;
                 ScreenToClient(hwnd, ref localPt);
-
                 System.Windows.Point relMouse = new System.Windows.Point(localPt.X, localPt.Y);
-
                 CursorCutoutMask.Center = relMouse;
                 CursorCutoutMask.GradientOrigin = relMouse;
-                if (_compositionBackend != null)
-                {
-                    try { _compositionBackend.UpdateCursor(); }
-                    catch (Exception ex) { FailComposition(ex); }
-                }
             }
         }
 
@@ -644,12 +645,11 @@ namespace WinRinglight
             {
                 var screens = System.Windows.Forms.Screen.AllScreens;
                 var dpi = VisualTreeHelper.GetDpi(this);
-                if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362) ||
-                    screens.Length != 1 || Config.Current.IsSpanned ||
-                    Config.Current.SelectedMonitors.Count != 1 || Config.Current.SelectedMonitors[0] != 0 ||
-                    _isFullscreenActive || Math.Abs(dpi.DpiScaleX - 1) > 0.001 || Math.Abs(dpi.DpiScaleY - 1) > 0.001)
+                if (!CompositionPolicy.CanUse(OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18362),
+                    screens.Length, Config.Current.IsSpanned, Config.Current.SelectedMonitors,
+                    _isFullscreenActive, dpi.DpiScaleX, dpi.DpiScaleY))
                 {
-                    StopComposition("WPF fallback: requires one monitor, 100% scaling, non-spanned and non-fullscreen.");
+                    StopComposition("WPF fallback: requires one monitor, 100% scaling and non-fullscreen.");
                     return;
                 }
                 var screen = screens[0];
@@ -677,6 +677,14 @@ namespace WinRinglight
             try { backend?.Dispose(); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition cleanup: " + ex); }
             if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
+            if (backend != null)
+            {
+                // Re-synchronise WPF after leaving Composition: its mask and
+                // appearance were intentionally not updated while hidden.
+                ApplyRingAppearance(Config.Current.Thickness, _displayedTemperature);
+                _hasCursorPosition = false;
+                if (_isRinglightOn) UpdateCursorCutout(null, EventArgs.Empty);
+            }
             DevCompositionStatus = status;
             DevCompositionChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -862,7 +870,11 @@ namespace WinRinglight
             _displayedTemperature = kelvin;
             if (_compositionBackend != null)
             {
-                try { _compositionBackend.SetRing((float)thickness, Config.Current.VisualStyleIndex == 0, kelvin); }
+                try
+                {
+                    _compositionBackend.SetRing((float)thickness, Config.Current.VisualStyleIndex == 0, kelvin);
+                    return;
+                }
                 catch (Exception ex) { FailComposition(ex); }
             }
             foreach (var border in _activeBorders)
