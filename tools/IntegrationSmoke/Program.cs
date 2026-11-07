@@ -127,6 +127,7 @@ internal static class Program
             TestFullscreenDetector(window, screens, false);
             TestFullscreenDetector(window, screens, true);
             TestTiled(window, screens[0]);
+            TestCaretMasks(window, screens[0]);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -544,6 +545,57 @@ internal static class Program
         else Console.WriteLine("PARTIAL: Tiled pixel probe could not move cursor.");
         window.SetDevTiling(false);
         if (!window.DevCompositionActive) throw new Exception("Tiled-to-legacy switch failed.");
+    }
+
+    private static void TestCaretMasks(MainWindow window, System.Windows.Forms.Screen screen)
+    {
+        var setCaret = typeof(MainWindow).GetMethod("SetCaretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var area = screen.WorkingArea;
+        var caret = new System.Drawing.Point(area.Left + area.Width / 2, area.Top + 30);
+        var outer = (Grid)window.FindName("CaretMaskGrid");
+        window.SetCompositionExperiment(false);
+        setCaret.Invoke(window, new object?[] { caret });
+        if (outer.OpacityMask is not RadialGradientBrush || ((Grid)window.FindName("MainGrid")).OpacityMask is not RadialGradientBrush)
+            throw new Exception("WPF did not retain both caret and mouse masks.");
+        setCaret.Invoke(window, new object?[] { null });
+        if (outer.OpacityMask != null) throw new Exception("WPF caret mask did not clear.");
+        window.SetCompositionExperiment(true);
+        foreach (bool tiled in new[] { false, true })
+        {
+            window.SetDevTiling(tiled);
+            object scene = GetScene(window);
+            var backend = GetWindows(window)[0]!;
+            var type = backend.GetType();
+            scene.GetType().GetMethod("UpdateCursorAt")!.Invoke(scene, new object[] { caret.X, caret.Y });
+            setCaret.Invoke(window, new object?[] { caret });
+            if (!window.DevCompositionActive || outer.OpacityMask != null) throw new Exception("Caret caused Composition fallback or WPF invalidation.");
+            if (tiled)
+            {
+                var tiles = (System.Collections.IList)type.GetField("_tiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                bool both = false;
+                foreach (object tile in tiles)
+                {
+                    var t = tile.GetType();
+                    var extra = t.GetField("CaretMask")!.GetValue(tile);
+                    if (extra == null || !(bool)t.GetField("MaskApplied")!.GetValue(tile)!) continue;
+                    var brush = (Windows.UI.Composition.CompositionMaskBrush)extra.GetType().GetField("Brush")!.GetValue(extra)!;
+                    if (brush.Source == t.GetField("MaskBrush")!.GetValue(tile)) both = true;
+                }
+                if (!both) throw new Exception("Tiled mouse and caret masks were not combined.");
+            }
+            else
+            {
+                var extra = type.GetField("_caretMask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                var brush = (Windows.UI.Composition.CompositionMaskBrush)extra.GetType().GetField("Brush")!.GetValue(extra)!;
+                if (brush.Source != type.GetField("_maskedBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend))
+                    throw new Exception("Whole-monitor mouse and caret masks were not combined.");
+            }
+            setCaret.Invoke(window, new object?[] { null });
+            if (type.GetField("_caret", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend) != null)
+                throw new Exception("Composition caret did not clear.");
+        }
+        window.SetDevTiling(false);
+        Console.WriteLine("PASS: Simultaneous mouse/caret masks and caret clearing in WPF, tiled and whole-monitor Composition.");
     }
 
     private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)

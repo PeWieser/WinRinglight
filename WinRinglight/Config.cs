@@ -16,6 +16,7 @@ namespace WinRinglight
         public bool AutoTemperature { get; set; } = false;
         public int CursorMaxFps { get; set; } = 60;
         public bool CursorUnlimitedFps { get; set; } = false;
+        public bool TextCaretCutout { get; set; } = false;
         public int VisualStyleIndex { get; set; } = 0;
         public bool IsSpanned { get; set; } = false;
         // List of monitor indices that should show a ringlight
@@ -131,6 +132,10 @@ namespace WinRinglight
             { "TabPerformance", new Dictionary<string, string> {
                 { "de", "Leistung" },
                 { "en", "Performance" }
+            }},
+            { "TextCaretCutout", new Dictionary<string, string> {
+                { "de", "Zusätzliche Aussparung am Textcursor (wenn verfügbar)" },
+                { "en", "Additional cutout at the text caret (when available)" }
             }},
             { "CursorFps", new Dictionary<string, string> {
                 { "de", "Cursor-Aussparung: maximale FPS (1–240)" },

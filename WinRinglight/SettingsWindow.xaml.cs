@@ -56,6 +56,8 @@ namespace WinRinglight
             ChkDevElementCache.IsChecked = _mainWindow.DevCacheElements;
             ChkDevGroupCache.IsChecked = _mainWindow.DevCacheGroup;
             ChkDevNoGlow.IsChecked = _mainWindow.DevDisableGlow;
+            LblTextCaret.Text = Config.GetText("TextCaretCutout");
+            ChkTextCaret.IsChecked = Config.Current.TextCaretCutout;
             LblCursorFps.Text = Config.GetText("CursorFps");
             LblUnlimitedFps.Text = Config.GetText("CursorFpsUnlimited");
             LblFpsWarning.Text = Config.GetText("CursorFpsWarning");
@@ -297,6 +299,14 @@ namespace WinRinglight
 
         private void CursorFpsUp_Click(object sender, RoutedEventArgs e) => ChangeCursorFps(1);
         private void CursorFpsDown_Click(object sender, RoutedEventArgs e) => ChangeCursorFps(-1);
+
+        private void TextCaret_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            Config.Current.TextCaretCutout = ChkTextCaret.IsChecked == true;
+            _mainWindow.RefreshCaretTracking();
+            Config.Save();
+        }
 
         private void UnlimitedFps_Changed(object sender, RoutedEventArgs e)
         {

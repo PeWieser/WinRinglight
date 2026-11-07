@@ -4,6 +4,7 @@
         Title="WinRinglight Overlay" WindowStyle="None" AllowsTransparency="True" 
         Background="Transparent" Topmost="True" ShowInTaskbar="False" Icon="icon.ico">
 
+    <Grid x:Name="CaretMaskGrid">
     <Grid x:Name="MainGrid">
         <Grid.OpacityMask>
             <RadialGradientBrush x:Name="CursorCutoutMask" 
@@ -14,5 +15,6 @@
                 <GradientStop x:Name="StopOuter" Color="#FFFFFFFF" Offset="1.0"/>
             </RadialGradientBrush>
         </Grid.OpacityMask>
+    </Grid>
     </Grid>
 </Window>

@@ -229,6 +229,7 @@ namespace WinRinglight
 
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
             StopCursorTracking();
+            _caretTracker?.Dispose();
             StopComposition();
             _temperatureTimer?.Stop();
             _webcamTimer?.Stop();
@@ -239,6 +240,7 @@ namespace WinRinglight
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            RefreshCaretTracking();
             MainGrid.IsHitTestVisible = false;
             this.IsHitTestVisible = false;
             //RenderOptions.SetEdgeMode(MainGrid, EdgeMode.Aliased);
@@ -616,6 +618,50 @@ namespace WinRinglight
         public bool DevSupersampling { get; private set; }
         public bool DevTiling { get; private set; } = true;
         private CompositionScene? _compositionBackend;
+        private CaretTracker? _caretTracker;
+        private System.Drawing.Point? _caretPosition;
+        private RadialGradientBrush? _caretWpfMask;
+
+        public void RefreshCaretTracking()
+        {
+            _caretTracker ??= new CaretTracker(Dispatcher, SetCaretPosition);
+            _caretTracker.SetEnabled(Config.Current.TextCaretCutout);
+        }
+
+        private void SetCaretPosition(System.Drawing.Point? position)
+        {
+            _caretPosition = position;
+            if (_compositionBackend != null)
+            {
+                try { _compositionBackend.UpdateCaret(position); }
+                catch (Exception ex) { FailComposition(ex); }
+            }
+            UpdateWpfCaretMask();
+        }
+
+        private void UpdateWpfCaretMask()
+        {
+            if (_compositionBackend != null || _caretPosition == null)
+            {
+                CaretMaskGrid.OpacityMask = null;
+                return;
+            }
+            _caretWpfMask ??= new RadialGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                SpreadMethod = GradientSpreadMethod.Pad,
+                GradientStops = new GradientStopCollection {
+                    new GradientStop(Colors.Transparent, 0), new GradientStop(Colors.Transparent, 0.2),
+                    new GradientStop(Colors.White, 1) }
+            };
+            var p = _caretPosition.Value;
+            var local = CaretMaskGrid.PointFromScreen(new System.Windows.Point(p.X, p.Y));
+            _caretWpfMask.Center = local;
+            _caretWpfMask.GradientOrigin = local;
+            _caretWpfMask.RadiusX = CursorCutoutMask.RadiusX;
+            _caretWpfMask.RadiusY = CursorCutoutMask.RadiusY;
+            CaretMaskGrid.OpacityMask = _caretWpfMask;
+        }
         public bool DevCompositionActive => _compositionBackend != null;
         public string DevCompositionStatus { get; private set; } = "WPF";
         public event EventHandler? DevCompositionChanged;
@@ -635,6 +681,8 @@ namespace WinRinglight
                 _compositionBackend.SetSupersampling(DevSupersampling);
                 _compositionBackend.SetTiling(DevTiling);
                 ConfigureCompositionScene();
+                _compositionBackend.UpdateCaret(_caretPosition);
+                UpdateWpfCaretMask();
                 MainGrid.Visibility = Visibility.Hidden;
                 DevCompositionChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -693,6 +741,7 @@ namespace WinRinglight
             try { backend?.Dispose(); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition cleanup: " + ex); }
             if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
+            UpdateWpfCaretMask();
             if (backend != null)
             {
                 // Re-synchronise WPF after leaving Composition: its mask and
@@ -878,6 +927,7 @@ namespace WinRinglight
             CursorCutoutMask.RadiusX = baseH * Config.CursorCutoutRadiusPercent;
             CursorCutoutMask.RadiusY = baseH * Config.CursorCutoutRadiusPercent;
             StopMiddle.Offset = Math.Clamp(1.0 - Config.CursorBlurRadiusPercent, 0.01, 0.99);
+            UpdateWpfCaretMask();
         }
 
         private void ApplyRingAppearance(double thickness, double kelvin)

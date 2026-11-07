@@ -13,6 +13,7 @@ internal sealed class CompositionScene : IDisposable
     private bool _sharedGeometry;
     private float _maximumRasterScale = 1;
     private bool _useTiles = true;
+    private Point? _caret;
     public bool UsingTiles { get; private set; }
     public string? TileFallbackReason { get; private set; }
 
@@ -63,6 +64,7 @@ internal sealed class CompositionScene : IDisposable
         foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
         _windows.AddRange(replacements);
+        foreach (var window in _windows) window.UpdateCaret(_caret);
         _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
         _sharedGeometry = sharedGeometry;
@@ -99,6 +101,7 @@ internal sealed class CompositionScene : IDisposable
     public void SetVisible(bool visible) { foreach (var window in _windows) window.SetVisible(visible); }
     public void UpdateCursor() { foreach (var window in _windows) window.UpdateCursor(); }
     public void UpdateCursorAt(int x, int y) { foreach (var window in _windows) window.UpdateCursorAt(x, y); }
+    public void UpdateCaret(Point? caret) { _caret = caret; foreach (var window in _windows) window.UpdateCaret(caret); }
     public bool SetCaptureExcluded(bool value)
     {
         // Try every window, even if one fails; caller falls back if any failed.

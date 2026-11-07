@@ -36,7 +36,15 @@ internal sealed class CompositionBackend : IDisposable
         public required CompositionSurfaceBrush RingBrush;
         public required CompositionMaskBrush MaskBrush;
         public bool MaskApplied;
+        public ExtraMask? CaretMask;
     }
+    private sealed class ExtraMask
+    {
+        public required CompositionRadialGradientBrush Gradient;
+        public required CompositionMaskBrush Brush;
+    }
+    private ExtraMask? _caretMask;
+    private System.Drawing.Point? _caret;
     private CompositionSurfaceBrush? _ringBrush;
     private CompositionMaskBrush? _maskedBrush;
     private bool _maskApplied;
@@ -238,17 +246,50 @@ internal sealed class CompositionBackend : IDisposable
         }
     }
 
+    private ExtraMask CreateCaretMask(Vector2 size)
+    {
+        if (_compositor == null) throw new InvalidOperationException();
+        var gradient = Keep(_compositor.CreateRadialGradientBrush());
+        gradient.MappingMode = CompositionMappingMode.Absolute;
+        gradient.EllipseRadius = new Vector2(_cursorRadius);
+        gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0, Color.FromArgb(0, 255, 255, 255))));
+        gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0.2f, Color.FromArgb(0, 255, 255, 255))));
+        gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(1, Color.FromArgb(255, 255, 255, 255))));
+        var visual = Keep(_compositor.CreateSpriteVisual());
+        visual.Size = size;
+        visual.Brush = gradient;
+        var surface = Keep(_compositor.CreateVisualSurface());
+        surface.SourceVisual = visual;
+        surface.SourceSize = size;
+        var brush = Keep(_compositor.CreateSurfaceBrush(surface));
+        brush.Stretch = CompositionStretch.None;
+        var mask = Keep(_compositor.CreateMaskBrush());
+        mask.Mask = brush;
+        return new ExtraMask { Gradient = gradient, Brush = mask };
+    }
+
     private void UpdateTileCursor(MaskTile tile, int x, int y)
     {
-        if (x == int.MinValue && y == int.MinValue) return;
-        bool intersects = CursorCoverage.Intersects(tile.Bounds, x, y, _cursorRadius);
-        if (!intersects)
+        bool mouse = x != int.MinValue && CursorCoverage.Intersects(tile.Bounds, x, y, _cursorRadius);
+        if (mouse) tile.Gradient.EllipseCenter = new Vector2(x - tile.Bounds.Left, y - tile.Bounds.Top);
+        tile.MaskApplied = mouse;
+        CompositionBrush source = mouse ? tile.MaskBrush : tile.RingBrush;
+        if (_caret is System.Drawing.Point caret && CursorCoverage.Intersects(tile.Bounds, caret.X, caret.Y, _cursorRadius))
         {
-            if (tile.MaskApplied) { tile.Visual.Brush = tile.RingBrush; tile.MaskApplied = false; }
-            return;
+            tile.CaretMask ??= CreateCaretMask(new Vector2(tile.Bounds.Width, tile.Bounds.Height));
+            var center = new Vector2(caret.X - tile.Bounds.Left, caret.Y - tile.Bounds.Top);
+            if (tile.CaretMask.Gradient.EllipseCenter != center) tile.CaretMask.Gradient.EllipseCenter = center;
+            if (tile.CaretMask.Brush.Source != source) tile.CaretMask.Brush.Source = source;
+            source = tile.CaretMask.Brush;
         }
-        tile.Gradient.EllipseCenter = new Vector2(x - tile.Bounds.Left, y - tile.Bounds.Top);
-        if (!tile.MaskApplied) { tile.Visual.Brush = tile.MaskBrush; tile.MaskApplied = true; }
+        if (tile.Visual.Brush != source) tile.Visual.Brush = source;
+    }
+
+    public void UpdateCaret(System.Drawing.Point? caret)
+    {
+        if (_caret == caret) return;
+        _caret = caret;
+        ApplyCursor();
     }
 
     private T Keep<T>(T value) where T : CompositionObject { _objects.Add(value); return value; }
@@ -444,22 +485,31 @@ internal sealed class CompositionBackend : IDisposable
     {
         if (x == _lastX && y == _lastY) return;
         _lastX = x; _lastY = y;
+        ApplyCursor();
+    }
+
+    private void ApplyCursor()
+    {
         if (_tileRoot != null)
         {
-            foreach (var tile in _tiles) if (tile.Visual.IsVisible) UpdateTileCursor(tile, x, y);
+            foreach (var tile in _tiles) if (tile.Visual.IsVisible) UpdateTileCursor(tile, _lastX, _lastY);
             return;
         }
         if (_gradient == null || _result == null || _ringBrush == null || _maskedBrush == null) return;
-        bool intersects = CursorCoverage.Intersects(new System.Drawing.Rectangle(_left, _top, _width, _height), x, y, _cursorRadius);
-        if (!intersects)
+        var bounds = new System.Drawing.Rectangle(_left, _top, _width, _height);
+        bool mouse = _lastX != int.MinValue && CursorCoverage.Intersects(bounds, _lastX, _lastY, _cursorRadius);
+        if (mouse) _gradient.EllipseCenter = new Vector2(_lastX - _left, _lastY - _top);
+        _maskApplied = mouse;
+        CompositionBrush source = mouse ? _maskedBrush : _ringBrush;
+        if (_caret is System.Drawing.Point caret && CursorCoverage.Intersects(bounds, caret.X, caret.Y, _cursorRadius))
         {
-            // Beyond the cutout radius its mask is uniformly opaque. Use the
-            // ring directly, without updating or compositing a fullscreen mask.
-            if (_maskApplied) { _result.Brush = _ringBrush; _maskApplied = false; }
-            return;
+            _caretMask ??= CreateCaretMask(new Vector2(_width, _height));
+            var center = new Vector2(caret.X - _left, caret.Y - _top);
+            if (_caretMask.Gradient.EllipseCenter != center) _caretMask.Gradient.EllipseCenter = center;
+            if (_caretMask.Brush.Source != source) _caretMask.Brush.Source = source;
+            source = _caretMask.Brush;
         }
-        _gradient.EllipseCenter = new Vector2(x - _left, y - _top);
-        if (!_maskApplied) { _result.Brush = _maskedBrush; _maskApplied = true; }
+        if (_result.Brush != source) _result.Brush = source;
     }
 
     public bool SetCaptureExcluded(bool value) => _hwnd != IntPtr.Zero && SetWindowDisplayAffinity(_hwnd, value ? WdaExcludeFromCapture : WdaNone);
