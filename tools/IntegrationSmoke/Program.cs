@@ -154,6 +154,7 @@ internal static class Program
             TestCaretTracking(window, screens[0], "--caret-fixture");
             TestCaretTracking(window, screens[0], "--wpf-caret-fixture");
             TestCaretSwitch(window);
+            TestCaretWatchdog();
             TestChromeAddressCaret(window);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
@@ -716,6 +717,27 @@ internal static class Program
             if (second != null) { if (!second.HasExited) second.Kill(); second.Dispose(); }
             Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
         }
+    }
+
+    private static void TestCaretWatchdog()
+    {
+        var type = typeof(MainWindow).Assembly.GetType("WinRinglight.CaretTracker")!;
+        Action<System.Drawing.Point?> callback = _ => { };
+        object tracker = Activator.CreateInstance(type, Dispatcher.CurrentDispatcher, callback)!;
+        void Set(string name, object value) => type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(tracker, value);
+        int Get(string name) => (int)type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(tracker)!;
+        try
+        {
+            // Simulate an old app's provider stuck in an in-flight call. This
+            // exercises the replacement decision, not a real hung COM server.
+            Set("_enabled", true); Set("_workerCount", 1); Set("_workerVersion", 1);
+            Set("_queryVersion", 1); Set("_queryGeneration", 0); Set("_queryForeground", IntPtr.Zero);
+            Set("_queryStarted", System.Diagnostics.Stopwatch.GetTimestamp() - System.Diagnostics.Stopwatch.Frequency);
+            type.GetMethod("Expire", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(tracker, null);
+            if (Get("_workerVersion") != 2) throw new Exception("Stalled old provider did not trigger a replacement worker.");
+            Console.WriteLine("PASS: Stalled old-app provider triggers a bounded replacement worker (simulated).");
+        }
+        finally { ((IDisposable)tracker).Dispose(); }
     }
 
     private static void TestChromeAddressCaret(MainWindow window)
