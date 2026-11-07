@@ -269,8 +269,10 @@ internal static class Program
         }
         var g0 = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)windows[0]!.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
         var g1 = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)windows[1]!.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
-        if (Math.Abs((g0.Offset.X + left.Left) - (g1.Offset.X + right.Left)) > 0.01 ||
-            Math.Abs((g0.Offset.Y + left.Top) - (g1.Offset.Y + right.Top)) > 0.01 || g0.Size != g1.Size || g0.CornerRadius != g1.CornerRadius)
+        float raster0 = (float)windows[0]!.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
+        float raster1 = (float)windows[1]!.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
+        if (Math.Abs((g0.Offset.X / raster0 + left.Left) - (g1.Offset.X / raster1 + right.Left)) > 0.01 ||
+            Math.Abs((g0.Offset.Y / raster0 + left.Top) - (g1.Offset.Y / raster1 + right.Top)) > 0.01 || g0.Size / raster0 != g1.Size / raster1 || g0.CornerRadius / raster0 != g1.CornerRadius / raster1)
             throw new Exception("Spanned pieces do not share the same global ring geometry.");
         IntPtr firstBeforeAnimation = (IntPtr)windows[0]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;
         var changedRing = new System.Drawing.Rectangle(area.Left, area.Top, area.Width, area.Height - 30);
@@ -318,8 +320,10 @@ internal static class Program
         var leftBackend = windows[0]!; var rightBackend = windows[1]!;
         var gl = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)leftBackend.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(leftBackend)!;
         var gr = (Windows.UI.Composition.CompositionRoundedRectangleGeometry)rightBackend.GetType().GetField("_geometry", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(rightBackend)!;
-        if (gl.Offset.X + gl.Size.X <= left.Width || gr.Offset.X >= 0 ||
-            gl.Offset.Y == gr.Offset.Y)
+        float leftRaster = (float)leftBackend.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(leftBackend)!;
+        float rightRaster = (float)rightBackend.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(rightBackend)!;
+        if ((gl.Offset.X + gl.Size.X) / leftRaster <= left.Width || gr.Offset.X >= 0 ||
+            gl.Offset.Y / leftRaster == gr.Offset.Y / rightRaster)
             throw new Exception("Full-height spanned geometry has a seam border or did not respect the individual height.");
         if (GetCursorPos(out Point savedCursor))
         {

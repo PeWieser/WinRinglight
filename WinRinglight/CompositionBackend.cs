@@ -28,6 +28,7 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionColorBrush? _coreBrush;
     private double _currentThickness;
     private float _dpiScale = 1;
+    private float _rasterScale = 1;
     public float DpiScale => _dpiScale;
     private CompositionRoundedRectangleGeometry? _geometry;
     private CompositionRoundedRectangleGeometry? _outerGeometry, _innerGeometry;
@@ -74,17 +75,13 @@ internal sealed class CompositionBackend : IDisposable
             // Rasterise the vector ring at higher resolution before downsampling.
             // Bound each surface dimension to avoid excessive allocation on 4K+
             // displays; the cursor mask stays at native resolution.
-            float sampleScale = Math.Max(1f, Math.Min(sampleScaleOverride ?? 2f, 4096f / Math.Max(_width, _height)));
+            _rasterScale = Math.Max(1f, Math.Min(sampleScaleOverride ?? 2f, 4096f / Math.Max(_width, _height)));
             _ring = Keep(_compositor.CreateShapeVisual());
-            _ring.Size = size;
-            _ring.Scale = new Vector3(sampleScale, sampleScale, 1);
+            _ring.Size = size * _rasterScale;
             SetRing(thickness, rounded, kelvin);
-            var supersampledRoot = Keep(_compositor.CreateContainerVisual());
-            supersampledRoot.Size = size * sampleScale;
-            supersampledRoot.Children.InsertAtTop(_ring);
             var ringSurface = Keep(_compositor.CreateVisualSurface());
-            ringSurface.SourceVisual = supersampledRoot;
-            ringSurface.SourceSize = size * sampleScale;
+            ringSurface.SourceVisual = _ring;
+            ringSurface.SourceSize = size * _rasterScale;
             var ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
             ringBrush.Stretch = CompositionStretch.Fill;
             ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
@@ -162,14 +159,14 @@ internal sealed class CompositionBackend : IDisposable
             {
                 var shape = KeepRing(_compositor.CreateSpriteShape(contour));
                 shape.StrokeBrush = brush;
-                shape.StrokeThickness = 2 * blur * fraction;
+                shape.StrokeThickness = 2 * blur * fraction * _rasterScale;
                 _ring.Shapes.Add(shape);
             }
         }
         var core = KeepRing(_compositor.CreateSpriteShape(geometry));
         _coreBrush = KeepRing(_compositor.CreateColorBrush(color));
         core.StrokeBrush = _coreBrush;
-        core.StrokeThickness = thickness;
+        core.StrokeThickness = thickness * _rasterScale;
         _ring.Shapes.Add(core);
     }
 
@@ -185,6 +182,10 @@ internal sealed class CompositionBackend : IDisposable
         var offset = new Vector2(_ringBounds.Left - _left + inset + thickness / 2 - extraLeft,
                                  _ringBounds.Top - _top + inset + thickness / 2);
         var size = new Vector2(Math.Max(0, _ringBounds.Width + extraLeft + extraRight - inset * 2 - thickness), Math.Max(0, _ringBounds.Height - inset * 2 - thickness));
+        offset *= _rasterScale;
+        size *= _rasterScale;
+        radius *= _rasterScale;
+        thickness *= _rasterScale;
         SetShapeGeometry(geometry, offset, size, new Vector2(radius), animate);
         float half = thickness / 2;
         if (_outerGeometry != null)
