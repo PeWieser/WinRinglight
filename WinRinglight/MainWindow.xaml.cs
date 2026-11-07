@@ -508,6 +508,7 @@ namespace WinRinglight
 
         public void RefreshCursorTracking()
         {
+            _caretTracker?.SetRate(Config.Current.CursorMaxFps, Config.Current.CursorUnlimitedFps);
             StopCursorTracking();
             if (!_isRinglightOn || _cursorTimer == null) return;
             if (Config.Current.CursorUnlimitedFps)
@@ -625,6 +626,7 @@ namespace WinRinglight
         public void RefreshCaretTracking()
         {
             _caretTracker ??= new CaretTracker(Dispatcher, SetCaretPosition);
+            _caretTracker.SetRate(Config.Current.CursorMaxFps, Config.Current.CursorUnlimitedFps);
             _caretTracker.SetEnabled(Config.Current.TextCaretCutout);
         }
 

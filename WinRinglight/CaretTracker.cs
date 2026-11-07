@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Threading;
+using System.Windows.Automation;
+using System.Windows.Automation.Text;
 
 namespace WinRinglight;
 
@@ -18,6 +20,8 @@ internal sealed class CaretTracker : IDisposable
     private Thread? _worker;
     private volatile bool _enabled, _disposed;
     private int _generation;
+    private volatile int _intervalMs = 16;
+    private int _refreshVersion;
     private long _lastSuccess;
     private IntPtr _sampleForeground;
     private Point? _lastPoint;
@@ -28,6 +32,8 @@ internal sealed class CaretTracker : IDisposable
         _expiry = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => Expire(), dispatcher);
         _expiry.Stop();
     }
+
+    public void SetRate(int fps, bool unlimited) => _intervalMs = Math.Max(1, (int)Math.Round(1000.0 / (unlimited ? 240 : Math.Clamp(fps, 1, 240))));
 
     public void SetEnabled(bool enabled)
     {
@@ -43,6 +49,9 @@ internal sealed class CaretTracker : IDisposable
 
     private void Work()
     {
+        Point? previous = null;
+        IntPtr previousForeground = IntPtr.Zero;
+        int previousGeneration = -1, previousRefresh = -1;
         while (!_disposed)
         {
             if (_enabled)
@@ -53,13 +62,24 @@ internal sealed class CaretTracker : IDisposable
                 Point? point = null;
                 try { point = FindCaret(foreground); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
-                if (!_disposed && !_dispatcher.HasShutdownStarted)
+                if (!_disposed && _enabled && generation == Volatile.Read(ref _generation) && foreground != IntPtr.Zero &&
+                    foreground == GetForegroundWindow() && Stopwatch.GetElapsedTime(started) <= TimeSpan.FromSeconds(1))
                 {
-                    try { _dispatcher.BeginInvoke(() => Accept(generation, foreground, started, point)); }
-                    catch (InvalidOperationException) { }
+                    Interlocked.Exchange(ref _lastSuccess, Stopwatch.GetTimestamp());
+                    // No dispatcher work or mask invalidation for an unchanged caret.
+                    int refresh = Volatile.Read(ref _refreshVersion);
+                    if (point != previous || foreground != previousForeground || generation != previousGeneration || refresh != previousRefresh)
+                    {
+                        previous = point; previousForeground = foreground; previousGeneration = generation; previousRefresh = refresh;
+                        if (!_dispatcher.HasShutdownStarted)
+                        {
+                            try { _dispatcher.BeginInvoke(() => Accept(generation, foreground, started, point)); }
+                            catch (InvalidOperationException) { }
+                        }
+                    }
                 }
             }
-            Thread.Sleep(150);
+            Thread.Sleep(_enabled ? _intervalMs : 150);
         }
     }
 
@@ -67,13 +87,16 @@ internal sealed class CaretTracker : IDisposable
     {
         if (!_enabled || generation != Volatile.Read(ref _generation) || Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(1) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
         _sampleForeground = foreground;
-        _lastSuccess = Stopwatch.GetTimestamp();
         Publish(point);
     }
 
     private void Expire()
     {
-        if (_sampleForeground != GetForegroundWindow() || Stopwatch.GetElapsedTime(_lastSuccess) > TimeSpan.FromSeconds(1)) Publish(null);
+        if ((_sampleForeground != GetForegroundWindow() || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSuccess)) > TimeSpan.FromSeconds(1)) && _lastPoint != null)
+        {
+            Interlocked.Increment(ref _refreshVersion);
+            Publish(null);
+        }
     }
 
     private void Publish(Point? point)
@@ -86,21 +109,67 @@ internal sealed class CaretTracker : IDisposable
     private static Point? FindCaret(IntPtr foreground)
     {
         if (foreground == IntPtr.Zero) return null;
-        // Native UI Automation TextPattern2 provides caret geometry in modern controls.
-        // The managed WPF UIA wrapper does not expose this pattern.
-        var modern = FindAutomationCaret(out bool supported);
-        if (supported) return modern;
-        // Classic Win32 edit controls may expose only the GUI-thread caret.
+        // Native GUI carets are cheap and are available even when a UIA
+        // provider advertises an empty caret rectangle.
         uint thread = GetWindowThreadProcessId(foreground, out _);
         var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
-        if (thread == 0 || !GetGUIThreadInfo(thread, ref info) || info.Caret == IntPtr.Zero || info.Focus == IntPtr.Zero) return null;
-        var p = new NativePoint { X = info.Rect.Left, Y = (info.Rect.Top + info.Rect.Bottom) / 2 };
-        return ClientToScreen(info.Caret, ref p) ? new Point(p.X, p.Y) : null;
+        if (thread != 0 && GetGUIThreadInfo(thread, ref info) && info.Caret != IntPtr.Zero && info.Focus != IntPtr.Zero)
+        {
+            var p = new NativePoint { X = info.Rect.Left, Y = (info.Rect.Top + info.Rect.Bottom) / 2 };
+            if (ClientToScreen(info.Caret, ref p)) return new Point(p.X, p.Y);
+        }
+        var modern = FindAutomationCaret(out bool inactive);
+        if (modern != null || inactive) return modern;
+        return FindLegacyCaret();
     }
 
-    private static Point? FindAutomationCaret(out bool supported)
+    // Some providers support only TextPattern, not TextPattern2. Inspect only
+    // collapsed selection geometry; never ask the provider for text content.
+    private static Point? FindLegacyCaret()
     {
-        supported = false;
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused == null || !focused.TryGetCurrentPattern(TextPattern.Pattern, out object value)) return null;
+            var selections = ((TextPattern)value).GetSelection();
+            if (selections.Length != 1) return null;
+            var selection = selections[0];
+            if (selection.CompareEndpoints(TextPatternRangeEndpoint.Start, selection, TextPatternRangeEndpoint.End) != 0) return null;
+            var direct = selection.GetBoundingRectangles();
+            if (direct.Length > 0 && !direct[0].IsEmpty)
+            {
+                var position = ToPoint(direct[0].Left, direct[0].Top, direct[0].Height);
+                if (position != null) return position;
+            }
+            var forward = selection.Clone();
+            if (forward.MoveEndpointByUnit(TextPatternRangeEndpoint.End, TextUnit.Character, 1) != 0)
+            {
+                var rects = forward.GetBoundingRectangles();
+                if (rects.Length > 0 && !rects[0].IsEmpty) return ToPoint(rects[0].Left, rects[0].Top, rects[0].Height);
+            }
+            var backward = selection.Clone();
+            if (backward.MoveEndpointByUnit(TextPatternRangeEndpoint.Start, TextUnit.Character, -1) != 0)
+            {
+                var rects = backward.GetBoundingRectangles();
+                if (rects.Length > 0 && !rects[rects.Length - 1].IsEmpty)
+                {
+                    var rect = rects[rects.Length - 1];
+                    return ToPoint(rect.Right, rect.Top, rect.Height);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { }
+        return null;
+    }
+
+    private static Point? ToPoint(double x, double y, double height) =>
+        double.IsFinite(x) && double.IsFinite(y) && double.IsFinite(height) && height > 0 &&
+        x >= int.MinValue && x <= int.MaxValue && y >= int.MinValue && y + height <= int.MaxValue
+            ? new Point((int)Math.Round(x), (int)Math.Round(y + height / 2)) : null;
+
+    private static Point? FindAutomationCaret(out bool inactive)
+    {
+        inactive = false;
         object? automationObject = null;
         IAutomationElement? element = null;
         ITextPattern2? pattern = null;
@@ -113,14 +182,14 @@ internal sealed class CaretTracker : IDisposable
             Guid iid = typeof(ITextPattern2).GUID;
             element.GetCurrentPatternAs(10024, ref iid, out pattern);
             if (pattern == null) return null;
-            supported = true;
             pattern.GetCaretRange(out int active, out range);
-            if (active == 0 || range == null) return null;
+            if (active == 0) { inactive = true; return null; }
+            if (range == null) return null;
             range.GetBoundingRectangles(out double[] rects);
-            if (rects == null || rects.Length < 4 || !double.IsFinite(rects[0]) || !double.IsFinite(rects[1]) || !double.IsFinite(rects[3])) return null;
-            return new Point((int)Math.Round(rects[0]), (int)Math.Round(rects[1] + rects[3] / 2));
+            if (rects == null || rects.Length < 4) return null;
+            return ToPoint(rects[0], rects[1], rects[3]);
         }
-        catch (COMException) { supported = false; return null; }
+        catch (COMException) { return null; }
         finally
         {
             if (range != null) Marshal.ReleaseComObject(range);

@@ -13,6 +13,17 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--wpf-caret-fixture")
+        {
+            var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+            var app = new System.Windows.Application();
+            var input = new System.Windows.Controls.TextBox { Text = "WPF caret fixture", Margin = new Thickness(20) };
+            var form = new Window { Title = "WPF caret fixture", Left = area.Left + 100, Top = area.Top + 100,
+                Width = 400, Height = 160, Topmost = true, Content = input };
+            form.ContentRendered += (_, _) => { form.Activate(); input.Focus(); input.CaretIndex = input.Text.Length; };
+            app.Run(form);
+            return 0;
+        }
         if (args.Length == 1 && args[0] == "--caret-fixture")
         {
             var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
@@ -139,7 +150,8 @@ internal static class Program
             TestFullscreenDetector(window, screens, true);
             TestTiled(window, screens[0]);
             TestCaretMasks(window, screens[0]);
-            TestCaretTracking(window, screens[0]);
+            TestCaretTracking(window, screens[0], "--caret-fixture");
+            TestCaretTracking(window, screens[0], "--wpf-caret-fixture");
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -619,7 +631,7 @@ internal static class Program
         Console.WriteLine("PASS: Simultaneous mouse/caret masks and caret clearing in WPF, tiled and whole-monitor Composition.");
     }
 
-    private static void TestCaretTracking(MainWindow window, System.Windows.Forms.Screen screen)
+    private static void TestCaretTracking(MainWindow window, System.Windows.Forms.Screen screen, string fixture)
     {
         if (Environment.ProcessPath == null || System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
         {
@@ -628,7 +640,7 @@ internal static class Program
         var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Config.Current.TextCaretCutout = true;
         window.RefreshCaretTracking();
-        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--caret-fixture")
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, fixture)
             { UseShellExecute = false, CreateNoWindow = true }) ?? throw new Exception("Could not start caret fixture.");
         try
         {
@@ -642,7 +654,7 @@ internal static class Program
             process.Kill(); process.WaitForExit();
             for (int i = 0; i < 30 && field.GetValue(window) != null; i++) PumpFor(100);
             if (field.GetValue(window) != null) throw new Exception("Caret position remained after focus loss.");
-            Console.WriteLine("PASS: External focused text caret detected and cleared on focus loss.");
+            Console.WriteLine($"PASS: External focused text caret ({fixture}) detected and cleared on focus loss.");
         }
         finally
         {
