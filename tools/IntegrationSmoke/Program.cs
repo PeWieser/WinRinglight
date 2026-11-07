@@ -127,6 +127,14 @@ internal static class Program
             TestFullscreenDetector(window, screens, false);
             TestFullscreenDetector(window, screens, true);
             TestTiled(window, screens[0]);
+            window.SetDevTiling(true);
+            if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
+                throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
+            TestFullscreenDetector(window, screens, false);
+            TestFullscreenDetector(window, screens, true);
+            if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
+                throw new Exception("Tiled renderer did not remain active after fullscreen tests: " + window.DevCompositionStatus);
+            window.SetDevTiling(false);
             TestRasterQuality(window, screens[0]);
             Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
