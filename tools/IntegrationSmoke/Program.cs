@@ -688,7 +688,8 @@ internal static class Program
                 caret = (System.Drawing.Point)field.GetValue(window)!;
                 Console.WriteLine("PASS: Read-only focused text is ignored, editable focus restores the caret.");
             }
-            for (int i = 0; i < 4; i++) { keybd_event(0x25, 0, 0, UIntPtr.Zero); keybd_event(0x25, 0, 2, UIntPtr.Zero); }
+            byte moveKey = fixture == "--wpf-caret-fixture" ? (byte)0x27 : (byte)0x25;
+            for (int i = 0; i < 4; i++) { keybd_event(moveKey, 0, 0, UIntPtr.Zero); keybd_event(moveKey, 0, 2, UIntPtr.Zero); }
             for (int i = 0; i < 30 && Equals(field.GetValue(window), caret); i++) PumpFor(100);
             if (field.GetValue(window) is not System.Drawing.Point moved || moved == caret)
                 throw new Exception($"Text caret movement was not tracked ({fixture}).");

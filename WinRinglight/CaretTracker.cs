@@ -187,7 +187,8 @@ internal sealed class CaretTracker : IDisposable
         uint thread = GetWindowThreadProcessId(foreground, out _);
         var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
         if (thread != 0 && GetGUIThreadInfo(thread, ref info) && info.Caret != IntPtr.Zero && info.Focus != IntPtr.Zero &&
-            GetAncestor(info.Caret, 2) == foreground && GetAncestor(info.Focus, 2) == foreground)
+            GetAncestor(info.Caret, 2) == foreground && GetAncestor(info.Focus, 2) == foreground &&
+            (belongsToForeground || IsNativeEditable(info.Focus)))
         {
             var p = new NativePoint { X = info.Rect.Left, Y = (info.Rect.Top + info.Rect.Bottom) / 2 };
             if (ClientToScreen(info.Caret, ref p)) return new Point(p.X, p.Y);
@@ -220,6 +221,15 @@ internal sealed class CaretTracker : IDisposable
                 ? Rectangle.FromLTRB((int)Math.Floor(left), (int)Math.Floor(top), (int)Math.Ceiling(right), (int)Math.Ceiling(bottom)) : null;
         }
         catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { return null; }
+    }
+
+    private static bool IsNativeEditable(IntPtr hwnd)
+    {
+        var className = new System.Text.StringBuilder(128);
+        if (GetClassName(hwnd, className, className.Capacity) == 0) return false;
+        string name = className.ToString();
+        if (!name.Equals("Edit", StringComparison.OrdinalIgnoreCase) && !name.StartsWith("RichEdit", StringComparison.OrdinalIgnoreCase)) return false;
+        return (GetWindowLong(hwnd, -16) & 0x800) == 0; // ES_READONLY
     }
 
     private static bool IsEditable(AutomationElement focused)
@@ -431,6 +441,8 @@ internal sealed class CaretTracker : IDisposable
         public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
         public NativeRect Rect;
     }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int maxCount);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
     [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
