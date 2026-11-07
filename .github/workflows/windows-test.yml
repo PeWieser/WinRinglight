@@ -24,11 +24,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          dotnet run --project tools/IntegrationSmoke/IntegrationSmoke.csproj --configuration Release 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/smoke.log"
-          $code = $LASTEXITCODE
-          $summary = (Get-Content "$env:RUNNER_TEMP/smoke.log" | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
+          $stdout = "$env:RUNNER_TEMP/smoke-out.log"
+          $stderr = "$env:RUNNER_TEMP/smoke-err.log"
+          $process = Start-Process dotnet -ArgumentList @('run', '--project', 'tools/IntegrationSmoke/IntegrationSmoke.csproj', '--configuration', 'Release') -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $finished = $process.WaitForExit(150000)
+          if (-not $finished) { taskkill /PID $process.Id /T /F | Out-Null }
+          $lines = @()
+          if (Test-Path $stdout) { $lines += Get-Content $stdout }
+          if (Test-Path $stderr) { $lines += Get-Content $stderr }
+          $lines | ForEach-Object { Write-Output $_ }
+          $summary = ($lines | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
+          if (-not $finished) { $summary += '%0AFAIL: Desktop integration smoke test timed out.' }
           Write-Output "::notice::$summary"
-          if ($code -ne 0) { exit $code }
+          if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
       - name: Publish portable x64 app
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/win-x64
       - name: Upload Windows test version
