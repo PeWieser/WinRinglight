@@ -568,7 +568,7 @@ internal static class Program
             var type = backend.GetType();
             scene.GetType().GetMethod("UpdateCursorAt")!.Invoke(scene, new object[] { caret.X, caret.Y });
             setCaret.Invoke(window, new object?[] { caret });
-            if (!window.DevCompositionActive || outer.OpacityMask != null) throw new Exception("Caret caused Composition fallback or WPF invalidation.");
+            if (!window.DevCompositionActive || outer.OpacityMask != null) throw new Exception($"Caret caused Composition fallback or WPF invalidation: {window.DevCompositionStatus}, WPF mask={outer.OpacityMask != null}.");
             if (tiled)
             {
                 var tiles = (System.Collections.IList)type.GetField("_tiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
