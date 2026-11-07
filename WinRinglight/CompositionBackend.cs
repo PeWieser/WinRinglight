@@ -184,7 +184,7 @@ internal sealed class CompositionBackend : IDisposable
 
     // QuadraticEase(EaseInOut), exactly as the WPF animations: two quadratic
     // segments. These Bezier control points represent x=t, y=t² and y=2t−t².
-    private CompositionCubicBezierEasingFunction QuadraticSegment(bool easeIn) => _compositor!.CreateCubicBezierEasingFunction(
+    private CubicBezierEasingFunction QuadraticSegment(bool easeIn) => _compositor!.CreateCubicBezierEasingFunction(
         easeIn ? new Vector2(1f / 3, 0) : new Vector2(1f / 3, 2f / 3),
         easeIn ? new Vector2(2f / 3, 1f / 3) : new Vector2(2f / 3, 1));
 
