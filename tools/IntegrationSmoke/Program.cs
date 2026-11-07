@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -153,6 +154,7 @@ internal static class Program
             TestCaretTracking(window, screens[0], "--caret-fixture");
             TestCaretTracking(window, screens[0], "--wpf-caret-fixture");
             TestCaretSwitch(window);
+            TestChromeAddressCaret(window);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -716,6 +718,53 @@ internal static class Program
         }
     }
 
+    private static void TestChromeAddressCaret(MainWindow window)
+    {
+        string? chrome = new[] {
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe")
+        }.FirstOrDefault(System.IO.File.Exists);
+        if (chrome == null) { Console.WriteLine("SKIP: Chrome not installed; address bar caret requires real-device testing."); return; }
+        string profile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "winringlight-chrome-" + Guid.NewGuid().ToString("N"));
+        var start = new System.Diagnostics.ProcessStartInfo(chrome) { UseShellExecute = false };
+        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
+        Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
+        var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        using var process = System.Diagnostics.Process.Start(start) ?? throw new Exception("Could not launch Chrome fixture.");
+        try
+        {
+            for (int i = 0; i < 100; i++)
+            {
+                process.Refresh();
+                if (process.HasExited) throw new Exception("Chrome fixture exited.");
+                if (process.MainWindowHandle != IntPtr.Zero) break;
+                PumpFor(100);
+            }
+            process.Refresh();
+            if (process.MainWindowHandle == IntPtr.Zero) throw new Exception("Chrome window not available.");
+            SetForegroundWindow(process.MainWindowHandle); PumpFor(500);
+            // Ctrl+L, type a known address-bar string, then compare Home and End.
+            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false);
+            for (int i = 0; i < 12; i++) { Key(0x41, true); Key(0x41, false); }
+            Key(0x24, true); Key(0x24, false); PumpFor(700);
+            if (field.GetValue(window) is not System.Drawing.Point beginning) throw new Exception("Chrome address bar start caret was not detected.");
+            Key(0x23, true); Key(0x23, false);
+            for (int i = 0; i < 30 && Equals(field.GetValue(window), beginning); i++) PumpFor(100);
+            if (field.GetValue(window) is not System.Drawing.Point end || end.X <= beginning.X + 25)
+                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}.");
+            Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
+            if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
+            Console.WriteLine("PASS: Chrome address bar caret tracks Home/End and remains visible for selected text.");
+        }
+        finally
+        {
+            try { if (!process.HasExited) { process.Kill(true); process.WaitForExit(); } } catch { }
+            Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
+            try { System.IO.Directory.Delete(profile, true); } catch { }
+        }
+        static void Key(byte key, bool down) => keybd_event(key, 0, down ? 0u : 2u, UIntPtr.Zero);
+    }
+
     private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)
     {
         var dpi = VisualTreeHelper.GetDpi(window);
@@ -880,6 +929,7 @@ internal static class Program
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
     [DllImport("dwmapi.dll")] private static extern int DwmFlush();
