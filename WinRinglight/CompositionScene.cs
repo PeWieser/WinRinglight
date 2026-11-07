@@ -12,6 +12,9 @@ internal sealed class CompositionScene : IDisposable
     private float _cursorRadius;
     private bool _sharedGeometry;
     private float _maximumRasterScale = 1;
+    private bool _useTiles = true;
+    public bool UsingTiles { get; private set; }
+    public string? TileFallbackReason { get; private set; }
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible)
@@ -24,21 +27,38 @@ internal sealed class CompositionScene : IDisposable
             _layout = (CompositionLayout.Piece[])layout.Clone();
             return;
         }
-        var replacements = new List<CompositionBackend>();
-        try
+        List<CompositionBackend> CreateWindows(bool tiled)
         {
-            foreach (var piece in layout)
+            var created = new List<CompositionBackend>();
+            try
             {
-                // A single spanned ring must use one scale on all pieces or its
-                // outlines will split at a mixed-DPI monitor boundary.
-                float? sharedScale = sharedGeometry && replacements.Count > 0 ? replacements[0].DpiScale : null;
-                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, _maximumRasterScale));
+                foreach (var piece in layout)
+                {
+                    float? sharedScale = sharedGeometry && created.Count > 0 ? created[0].DpiScale : null;
+                    created.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible,
+                        cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, _maximumRasterScale, tiled));
+                }
+                return created;
+            }
+            catch
+            {
+                foreach (var window in created) SafeDispose(window);
+                throw;
             }
         }
-        catch
+        List<CompositionBackend> replacements;
+        TileFallbackReason = null;
+        try
         {
-            foreach (var window in replacements) SafeDispose(window);
-            throw;
+            replacements = CreateWindows(_useTiles);
+            UsingTiles = _useTiles;
+        }
+        catch (Exception ex) when (_useTiles)
+        {
+            System.Diagnostics.Trace.WriteLine("Tiled composition failed; retrying original Composition backend: " + ex);
+            TileFallbackReason = ex.Message;
+            replacements = CreateWindows(false);
+            UsingTiles = false;
         }
         foreach (var window in _windows) SafeDispose(window);
         _windows.Clear();
@@ -46,6 +66,13 @@ internal sealed class CompositionScene : IDisposable
         _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
         _sharedGeometry = sharedGeometry;
+    }
+
+    public void SetTiling(bool enabled)
+    {
+        if (_useTiles == enabled) return;
+        _useTiles = enabled;
+        InvalidateLayout();
     }
 
     public void SetSupersampling(bool enabled)

@@ -614,6 +614,7 @@ namespace WinRinglight
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
         public bool DevSupersampling { get; private set; }
+        public bool DevTiling { get; private set; } = true;
         private CompositionScene? _compositionBackend;
         public bool DevCompositionActive => _compositionBackend != null;
         public string DevCompositionStatus { get; private set; } = "WPF";
@@ -632,11 +633,19 @@ namespace WinRinglight
                 }
                 _compositionBackend = new CompositionScene();
                 _compositionBackend.SetSupersampling(DevSupersampling);
+                _compositionBackend.SetTiling(DevTiling);
                 ConfigureCompositionScene();
                 MainGrid.Visibility = Visibility.Hidden;
-                DevCompositionStatus = "Composition active (experimental)";
                 DevCompositionChanged?.Invoke(this, EventArgs.Empty);
             }
+            catch (Exception ex) { FailComposition(ex); }
+        }
+
+        public void SetDevTiling(bool enabled)
+        {
+            DevTiling = enabled;
+            if (_compositionBackend == null) return;
+            try { _compositionBackend.SetTiling(enabled); ConfigureCompositionScene(); }
             catch (Exception ex) { FailComposition(ex); }
         }
 
@@ -666,6 +675,9 @@ namespace WinRinglight
             float radius = (float)((primary?.Bounds.Height ?? 0) * Config.CursorCutoutRadiusPercent);
             _compositionBackend.Configure(layout, radius, (float)Config.Current.Thickness,
                 Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn);
+            string status = _compositionBackend.UsingTiles ? "Composition active (tiled experiment)" :
+                _compositionBackend.TileFallbackReason != null ? "Composition active; tiled renderer failed: " + _compositionBackend.TileFallbackReason : "Composition active (whole-monitor masks)";
+            if (DevCompositionStatus != status) { DevCompositionStatus = status; DevCompositionChanged?.Invoke(this, EventArgs.Empty); }
         }
 
         private void FailComposition(Exception ex)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Windows.Threading;
 using Color = Windows.UI.Color;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
@@ -23,7 +24,19 @@ internal sealed class CompositionBackend : IDisposable
     private static IntPtr _queueController; // Keep the UI-thread queue alive for the application lifetime.
     private readonly List<CompositionObject> _objects = new();
     private readonly List<CompositionObject> _ringObjects = new();
-    private SpriteVisual? _result;
+    private SpriteVisual? _result; // Legacy whole-monitor mask fallback.
+    private ContainerVisual? _tileRoot;
+    private readonly List<MaskTile> _tiles = new();
+    private DispatcherTimer? _tileSettleTimer;
+    private sealed class MaskTile
+    {
+        public required System.Drawing.Rectangle Bounds;
+        public required SpriteVisual Visual;
+        public required CompositionRadialGradientBrush Gradient;
+        public required CompositionSurfaceBrush RingBrush;
+        public required CompositionMaskBrush MaskBrush;
+        public bool MaskApplied;
+    }
     private CompositionSurfaceBrush? _ringBrush;
     private CompositionMaskBrush? _maskedBrush;
     private bool _maskApplied;
@@ -49,7 +62,7 @@ internal sealed class CompositionBackend : IDisposable
 
     public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null,
-        bool extendLeft = false, bool extendRight = false, float? sampleScaleOverride = null)
+        bool extendLeft = false, bool extendRight = false, float? sampleScaleOverride = null, bool tiled = false)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
@@ -84,40 +97,158 @@ internal sealed class CompositionBackend : IDisposable
             _ring = Keep(_compositor.CreateShapeVisual());
             _ring.Size = size * _rasterScale;
             SetRing(thickness, rounded, kelvin);
-            var ringSurface = Keep(_compositor.CreateVisualSurface());
-            ringSurface.SourceVisual = _ring;
-            ringSurface.SourceSize = size * _rasterScale;
-            _ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
-            _ringBrush.Stretch = CompositionStretch.Fill;
-            _ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
+            if (tiled)
+            {
+                InitializeTiles(size, visible);
+            }
+            else
+            {
+                var ringSurface = Keep(_compositor.CreateVisualSurface());
+                ringSurface.SourceVisual = _ring;
+                ringSurface.SourceSize = size * _rasterScale;
+                _ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
+                _ringBrush.Stretch = CompositionStretch.Fill;
+                _ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
 
-            _gradient = Keep(_compositor.CreateRadialGradientBrush());
-            _gradient.MappingMode = CompositionMappingMode.Absolute;
-            _gradient.EllipseRadius = new Vector2(cursorRadius);
-            _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0, Color.FromArgb(0, 255, 255, 255))));
-            _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0.2f, Color.FromArgb(0, 255, 255, 255))));
-            _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(1, Color.FromArgb(255, 255, 255, 255))));
-            var maskVisual = Keep(_compositor.CreateSpriteVisual());
-            maskVisual.Size = size;
-            maskVisual.Brush = _gradient;
-            var maskSurface = Keep(_compositor.CreateVisualSurface());
-            maskSurface.SourceVisual = maskVisual;
-            maskSurface.SourceSize = size;
-            var maskBrush = Keep(_compositor.CreateSurfaceBrush(maskSurface));
-            maskBrush.Stretch = CompositionStretch.None;
-            _maskedBrush = Keep(_compositor.CreateMaskBrush());
-            _maskedBrush.Source = _ringBrush;
-            _maskedBrush.Mask = maskBrush;
-            _result = Keep(_compositor.CreateSpriteVisual());
-            _result.Size = size;
-            _result.Brush = _maskedBrush;
-            _maskApplied = true;
-            _result.Opacity = visible ? 1 : 0;
-            _target.Root = _result;
+                _gradient = Keep(_compositor.CreateRadialGradientBrush());
+                _gradient.MappingMode = CompositionMappingMode.Absolute;
+                _gradient.EllipseRadius = new Vector2(cursorRadius);
+                _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0, Color.FromArgb(0, 255, 255, 255))));
+                _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0.2f, Color.FromArgb(0, 255, 255, 255))));
+                _gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(1, Color.FromArgb(255, 255, 255, 255))));
+                var maskVisual = Keep(_compositor.CreateSpriteVisual());
+                maskVisual.Size = size;
+                maskVisual.Brush = _gradient;
+                var maskSurface = Keep(_compositor.CreateVisualSurface());
+                maskSurface.SourceVisual = maskVisual;
+                maskSurface.SourceSize = size;
+                var maskBrush = Keep(_compositor.CreateSurfaceBrush(maskSurface));
+                maskBrush.Stretch = CompositionStretch.None;
+                _maskedBrush = Keep(_compositor.CreateMaskBrush());
+                _maskedBrush.Source = _ringBrush;
+                _maskedBrush.Mask = maskBrush;
+                _result = Keep(_compositor.CreateSpriteVisual());
+                _result.Size = size;
+                _result.Brush = _maskedBrush;
+                _maskApplied = true;
+                _result.Opacity = visible ? 1 : 0;
+                _target.Root = _result;
+            }
             UpdateCursor();
             ShowWindow(_hwnd, 4); // SW_SHOWNOACTIVATE
         }
         catch { Dispose(); throw; }
+    }
+
+    private void InitializeTiles(Vector2 size, bool visible)
+    {
+        if (_compositor == null || _ring == null || _target == null) throw new InvalidOperationException("Composition not initialized.");
+        _tileRoot = Keep(_compositor.CreateContainerVisual());
+        _tileRoot.Size = size;
+        _tileRoot.Opacity = visible ? 1 : 0;
+        // Keep object count bounded for very large monitors while maintaining
+        // smaller dirty regions on common Full HD / QHD setups.
+        int tileSize = Math.Max(256, (int)Math.Ceiling(Math.Max(_width, _height) / 12.0 / 64) * 64);
+        for (int y = 0; y < _height; y += tileSize)
+        for (int x = 0; x < _width; x += tileSize)
+        {
+            int width = Math.Min(tileSize, _width - x), height = Math.Min(tileSize, _height - y);
+            Vector2 tileSizeVector = new(width, height);
+            var ringSurface = Keep(_compositor.CreateVisualSurface());
+            ringSurface.SourceVisual = _ring;
+            ringSurface.SourceOffset = new Vector2(x, y) * _rasterScale;
+            ringSurface.SourceSize = tileSizeVector * _rasterScale;
+            var ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
+            ringBrush.Stretch = CompositionStretch.Fill;
+            ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
+            var gradient = Keep(_compositor.CreateRadialGradientBrush());
+            gradient.MappingMode = CompositionMappingMode.Absolute;
+            gradient.EllipseRadius = new Vector2(_cursorRadius);
+            gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0, Color.FromArgb(0, 255, 255, 255))));
+            gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(0.2f, Color.FromArgb(0, 255, 255, 255))));
+            gradient.ColorStops.Add(Keep(_compositor.CreateColorGradientStop(1, Color.FromArgb(255, 255, 255, 255))));
+            var maskVisual = Keep(_compositor.CreateSpriteVisual());
+            maskVisual.Size = tileSizeVector;
+            maskVisual.Brush = gradient;
+            var maskSurface = Keep(_compositor.CreateVisualSurface());
+            maskSurface.SourceVisual = maskVisual;
+            maskSurface.SourceSize = tileSizeVector;
+            var maskBrush = Keep(_compositor.CreateSurfaceBrush(maskSurface));
+            maskBrush.Stretch = CompositionStretch.None;
+            var composite = Keep(_compositor.CreateMaskBrush());
+            composite.Source = ringBrush;
+            composite.Mask = maskBrush;
+            var visual = Keep(_compositor.CreateSpriteVisual());
+            visual.Size = tileSizeVector;
+            visual.Offset = new Vector3(x, y, 0);
+            visual.Brush = ringBrush;
+            _tileRoot.Children.InsertAtTop(visual);
+            _tiles.Add(new MaskTile { Bounds = new System.Drawing.Rectangle(_left + x, _top + y, width, height),
+                Visual = visual, Gradient = gradient, RingBrush = ringBrush, MaskBrush = composite });
+        }
+        _tileSettleTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        _tileSettleTimer.Tick += (_, _) => { _tileSettleTimer?.Stop(); RefreshTileVisibility(); };
+        _target.Root = _tileRoot;
+        RefreshTileVisibility();
+    }
+
+    private void PrepareTilesForAnimation()
+    {
+        if (_tiles.Count == 0) return;
+        foreach (var tile in _tiles)
+        {
+            tile.Visual.IsVisible = true;
+            UpdateTileCursor(tile, _lastX, _lastY);
+        }
+        _tileSettleTimer?.Stop();
+        _tileSettleTimer?.Start();
+    }
+
+    private void RefreshTileVisibility()
+    {
+        if (_tiles.Count == 0 || _geometry == null) return;
+        float thickness = (float)_currentThickness;
+        float inset = _currentRounded ? 20 * _dpiScale : 0;
+        float radius = _geometry.CornerRadius.X / _rasterScale;
+        float extension = radius + inset + thickness + 50 * _dpiScale;
+        float left = _ringBounds.Left + inset - (_extendLeft ? extension + Math.Max(0, _ringBounds.Left - _left) : 0);
+        float right = _ringBounds.Right - inset + (_extendRight ? extension + Math.Max(0, _left + _width - _ringBounds.Right) : 0);
+        float top = _ringBounds.Top + inset, bottom = _ringBounds.Bottom - inset;
+        float glow = Math.Min(40, thickness * 0.4f) + 2 * _dpiScale + 2;
+        float innerLeft = left + thickness + glow, innerRight = right - thickness - glow;
+        float innerTop = top + thickness + glow, innerBottom = bottom - thickness - glow;
+        float innerRadius = Math.Max(0, radius - thickness / 2 - glow);
+        innerRadius = Math.Min(innerRadius, Math.Max(0, Math.Min(innerRight - innerLeft, innerBottom - innerTop) / 2));
+        bool InHole(float x, float y)
+        {
+            if (innerRight <= innerLeft || innerBottom <= innerTop || x < innerLeft || x > innerRight || y < innerTop || y > innerBottom) return false;
+            float cx = Math.Clamp(x, innerLeft + innerRadius, innerRight - innerRadius);
+            float cy = Math.Clamp(y, innerTop + innerRadius, innerBottom - innerRadius);
+            float dx = x - cx, dy = y - cy;
+            return dx * dx + dy * dy <= innerRadius * innerRadius;
+        }
+        foreach (var tile in _tiles)
+        {
+            var b = tile.Bounds;
+            bool outside = b.Right < left - glow || b.Left > right + glow || b.Bottom < top - glow || b.Top > bottom + glow;
+            bool insideHole = InHole(b.Left, b.Top) && InHole(b.Right, b.Top) && InHole(b.Left, b.Bottom) && InHole(b.Right, b.Bottom);
+            bool isVisible = !outside && !insideHole;
+            tile.Visual.IsVisible = isVisible;
+            if (isVisible) UpdateTileCursor(tile, _lastX, _lastY);
+        }
+    }
+
+    private void UpdateTileCursor(MaskTile tile, int x, int y)
+    {
+        if (x == int.MinValue && y == int.MinValue) return;
+        bool intersects = CursorCoverage.Intersects(tile.Bounds, x, y, _cursorRadius);
+        if (!intersects)
+        {
+            if (tile.MaskApplied) { tile.Visual.Brush = tile.RingBrush; tile.MaskApplied = false; }
+            return;
+        }
+        tile.Gradient.EllipseCenter = new Vector2(x - tile.Bounds.Left, y - tile.Bounds.Top);
+        if (!tile.MaskApplied) { tile.Visual.Brush = tile.MaskBrush; tile.MaskApplied = true; }
     }
 
     private T Keep<T>(T value) where T : CompositionObject { _objects.Add(value); return value; }
@@ -133,7 +264,9 @@ internal sealed class CompositionBackend : IDisposable
             if (_currentRounded != rounded && _geometry != null)
             {
                 _currentRounded = rounded;
+                if (animateStyle) PrepareTilesForAnimation();
                 SetGeometry(_geometry, thickness, rounded, animateStyle);
+                if (!animateStyle) RefreshTileVisibility();
             }
             UpdateColor(kelvin);
             return;
@@ -187,6 +320,7 @@ internal sealed class CompositionBackend : IDisposable
         core.StrokeBrush = _coreBrush;
         core.StrokeThickness = thickness * _rasterScale;
         _ring.Shapes.Add(core);
+        RefreshTileVisibility();
     }
 
     private void SetGeometry(CompositionRoundedRectangleGeometry geometry, float thickness, bool rounded, bool animate)
@@ -236,6 +370,7 @@ internal sealed class CompositionBackend : IDisposable
         _ringBounds = ringBounds;
         if (_geometry != null)
         {
+            if (animate) PrepareTilesForAnimation();
             // WPF only changes the corner radius on style changes, not during
             // a working-area/fullscreen layout transition.
             Vector2 oldRadius = _geometry.CornerRadius;
@@ -245,6 +380,7 @@ internal sealed class CompositionBackend : IDisposable
             _geometry.CornerRadius = oldRadius;
             if (_outerGeometry != null) _outerGeometry.CornerRadius = oldOuterRadius;
             if (_innerGeometry != null) _innerGeometry.CornerRadius = oldInnerRadius;
+            if (!animate) RefreshTileVisibility();
         }
     }
 
@@ -286,7 +422,8 @@ internal sealed class CompositionBackend : IDisposable
 
     public void SetVisible(bool visible)
     {
-        if (_result == null || _compositor == null) return;
+        Visual? root = (Visual?)_tileRoot ?? _result;
+        if (root == null || _compositor == null) return;
         float target = visible ? 1 : 0;
         using var animation = _compositor.CreateScalarKeyFrameAnimation();
         using var easeIn = QuadraticSegment(true);
@@ -295,7 +432,7 @@ internal sealed class CompositionBackend : IDisposable
         animation.InsertExpressionKeyFrame(0.5f, "this.StartingValue + (target - this.StartingValue) * 0.5", easeIn);
         animation.InsertKeyFrame(1, target, easeOut);
         animation.Duration = TimeSpan.FromSeconds(0.4);
-        _result.StartAnimation("Opacity", animation);
+        root.StartAnimation("Opacity", animation);
     }
 
     public void UpdateCursor()
@@ -305,9 +442,14 @@ internal sealed class CompositionBackend : IDisposable
 
     public void UpdateCursorAt(int x, int y)
     {
-        if (_gradient == null || _result == null || _ringBrush == null || _maskedBrush == null) return;
         if (x == _lastX && y == _lastY) return;
         _lastX = x; _lastY = y;
+        if (_tileRoot != null)
+        {
+            foreach (var tile in _tiles) if (tile.Visual.IsVisible) UpdateTileCursor(tile, x, y);
+            return;
+        }
+        if (_gradient == null || _result == null || _ringBrush == null || _maskedBrush == null) return;
         bool intersects = CursorCoverage.Intersects(new System.Drawing.Rectangle(_left, _top, _width, _height), x, y, _cursorRadius);
         if (!intersects)
         {
@@ -328,6 +470,10 @@ internal sealed class CompositionBackend : IDisposable
         // another overlay HWND visible after a failed scene reconfiguration.
         try
         {
+            _tileSettleTimer?.Stop();
+            _tileSettleTimer = null;
+            _tiles.Clear();
+            _tileRoot = null;
             if (_target != null)
             {
                 try { _target.Root = null; } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }

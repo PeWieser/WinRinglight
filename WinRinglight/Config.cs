@@ -100,6 +100,10 @@ namespace WinRinglight
                 { "de", "Composition-Renderer testen (experimentell)" },
                 { "en", "Test Composition renderer (experimental)" }
             }},
+            { "DevTiling", new Dictionary<string, string> {
+                { "de", "Composition: Cursor-Maske in Kacheln aufteilen (experimentell)" },
+                { "en", "Composition: tile cursor mask (experimental)" }
+            }},
             { "DevSupersampling", new Dictionary<string, string> {
                 { "de", "Composition: höhere Ringauflösung testen (mehr GPU-Speicher möglich)" },
                 { "en", "Composition: test higher ring resolution (may use more GPU memory)" }

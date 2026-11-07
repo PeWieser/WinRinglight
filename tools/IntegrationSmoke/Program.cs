@@ -58,6 +58,9 @@ internal static class Program
             window.SetRinglightState(true);
             window.SetCompositionExperiment(true);
             if (!window.DevCompositionActive) throw new Exception("Composition failed to activate: " + window.DevCompositionStatus);
+            // Preserve existing legacy-backend regression coverage; tiled mode
+            // is exercised separately below, including real pixels and seams.
+            window.SetDevTiling(false);
             IntPtr compositionHwnd = GetCompositionHwnd(window);
             int extended = GetWindowLong(compositionHwnd, -20);
             if ((extended & 0x00080000) == 0 || (extended & 0x20) == 0 || (extended & 0x00200000) == 0)
@@ -123,6 +126,7 @@ internal static class Program
             TestLayouts(window, screens);
             TestFullscreenDetector(window, screens, false);
             TestFullscreenDetector(window, screens, true);
+            TestTiled(window, screens[0]);
             TestRasterQuality(window, screens[0]);
             Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
@@ -453,6 +457,85 @@ internal static class Program
             Config.Current.IsSpanned = false;
             window.UpdateMonitorSetup();
         }
+    }
+
+    private static void TestTiled(MainWindow window, System.Windows.Forms.Screen screen)
+    {
+        window.SetDevTiling(true);
+        if (!window.DevCompositionActive) throw new Exception("Tiled renderer caused fallback: " + window.DevCompositionStatus);
+        object scene = GetScene(window);
+        if (!(bool)scene.GetType().GetProperty("UsingTiles")!.GetValue(scene)!)
+            throw new Exception("Tiled renderer failed to activate: " + window.DevCompositionStatus);
+        var area = screen.WorkingArea;
+        var left = new System.Drawing.Rectangle(area.Left, area.Top, area.Width / 2, area.Height);
+        var right = new System.Drawing.Rectangle(left.Right, area.Top, area.Width - left.Width, area.Height);
+        scene.GetType().GetMethod("Configure")!.Invoke(scene, new object[] {
+            new[] { new CompositionLayout.Piece(left, left, false, true), new CompositionLayout.Piece(right, right, true, false) },
+            180f, (float)Config.Current.Thickness, true, 4000d, false, true });
+        var windows = GetWindows(window);
+        if (windows.Count != 2) throw new Exception("Tiled scene did not create two windows.");
+        var update = scene.GetType().GetMethod("UpdateCursorAt")!;
+        var allTiles = new System.Collections.Generic.List<object>();
+        foreach (object backend in windows)
+        {
+            var tiles = (System.Collections.IList)backend.GetType().GetField("_tiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            foreach (object tile in tiles) allTiles.Add(tile);
+        }
+        if (allTiles.Count < 4) throw new Exception("Expected multiple mask tiles.");
+        int cursorY = area.Top + 40;
+        int x = left.Left + 30;
+        update.Invoke(scene, new object[] { x, cursorY });
+        int visibleCount = 0, activeCount = 0, skippedCount = 0;
+        foreach (object tile in allTiles)
+        {
+            Type t = tile.GetType();
+            var tileRect = (System.Drawing.Rectangle)t.GetField("Bounds")!.GetValue(tile)!;
+            var visual = (Windows.UI.Composition.SpriteVisual)t.GetField("Visual")!.GetValue(tile)!;
+            if (!visual.IsVisible) { skippedCount++; continue; }
+            visibleCount++;
+            bool masked = (bool)t.GetField("MaskApplied")!.GetValue(tile)!;
+            bool expected = CursorCoverage.Intersects(tileRect, x, cursorY, 180);
+            if (masked != expected) throw new Exception("Tiled cursor intersection mismatch.");
+            if (masked)
+            {
+                activeCount++;
+                var gradient = (Windows.UI.Composition.CompositionRadialGradientBrush)t.GetField("Gradient")!.GetValue(tile)!;
+                if (Math.Abs(gradient.EllipseCenter.X - (x - tileRect.Left)) > 0.01) throw new Exception("Wrong tile-local cursor coordinates.");
+            }
+        }
+        if (activeCount == 0 || activeCount >= visibleCount) throw new Exception("Tile updates were not localized.");
+        update.Invoke(scene, new object[] { left.Right, cursorY });
+        foreach (object backend in windows)
+        {
+            var tiles = (System.Collections.IList)backend.GetType().GetField("_tiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            bool any = false;
+            foreach (object tile in tiles)
+            {
+                var t = tile.GetType();
+                any |= (bool)t.GetField("MaskApplied")!.GetValue(tile)! && ((Windows.UI.Composition.SpriteVisual)t.GetField("Visual")!.GetValue(tile)!).IsVisible;
+            }
+            if (!any) throw new Exception("Cursor at monitor boundary did not activate tiles on both monitors.");
+        }
+        Console.WriteLine($"PASS: Tiled cursor updates localized: visible={visibleCount}, masked={activeCount}, empty tiles hidden={skippedCount}; seam activates both.");
+        // Sample actual core pixels across two independent tiled surfaces.
+        if (GetCursorPos(out Point saved))
+        {
+            SetCursorPos(area.Left + area.Width / 2, area.Bottom - 1);
+            scene.GetType().GetMethod("UpdateCursor")!.Invoke(scene, null);
+            Pump(); System.Threading.Thread.Sleep(800); DwmFlush();
+            int y = area.Top + (int)(20 + Config.Current.Thickness / 2);
+            IntPtr dc = GetDC(IntPtr.Zero);
+            uint a = GetPixel(dc, left.Left + left.Width / 2, y);
+            uint b = GetPixel(dc, right.Left + right.Width / 2, y);
+            ReleaseDC(IntPtr.Zero, dc);
+            static bool Ring(uint p) => p != 0xffffffff && Math.Abs((int)(p & 255) - 246) < 16 && Math.Abs((int)((p >> 8) & 255) - 203) < 16;
+            if (!Ring(a) || !Ring(b)) throw new Exception($"Tiled surface failed pixel probe: {a:X8}/{b:X8}.");
+            SetCursorPos(saved.X, saved.Y);
+            Console.WriteLine("PASS: Tiled rendering visible on both synthetic monitor surfaces.");
+        }
+        else Console.WriteLine("PARTIAL: Tiled pixel probe could not move cursor.");
+        window.SetDevTiling(false);
+        if (!window.DevCompositionActive) throw new Exception("Tiled-to-legacy switch failed.");
     }
 
     private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)
