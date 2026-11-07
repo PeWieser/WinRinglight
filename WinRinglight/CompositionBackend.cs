@@ -44,7 +44,7 @@ internal sealed class CompositionBackend : IDisposable
 
     public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null,
-        bool extendLeft = false, bool extendRight = false)
+        bool extendLeft = false, bool extendRight = false, float? sampleScaleOverride = null)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
@@ -74,7 +74,7 @@ internal sealed class CompositionBackend : IDisposable
             // Rasterise the vector ring at higher resolution before downsampling.
             // Bound each surface dimension to avoid excessive allocation on 4K+
             // displays; the cursor mask stays at native resolution.
-            float sampleScale = Math.Max(1f, Math.Min(2f, 4096f / Math.Max(_width, _height)));
+            float sampleScale = Math.Max(1f, Math.Min(sampleScaleOverride ?? 2f, 4096f / Math.Max(_width, _height)));
             _ring = Keep(_compositor.CreateShapeVisual());
             _ring.Size = size;
             _ring.Scale = new Vector3(sampleScale, sampleScale, 1);

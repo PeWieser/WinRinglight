@@ -123,6 +123,7 @@ internal static class Program
             TestLayouts(window, screens);
             TestFullscreenDetector(window, screens, false);
             TestFullscreenDetector(window, screens, true);
+            TestRasterQuality(window, screens[0]);
             Console.WriteLine("PASS: Composition reactivation and dynamic layouts remain active.");
             return 0;
         }
@@ -406,6 +407,86 @@ internal static class Program
             if (!process.HasExited) process.Kill();
             Config.Current.IsSpanned = false;
             window.UpdateMonitorSetup();
+        }
+    }
+
+    private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)
+    {
+        var dpi = VisualTreeHelper.GetDpi(window);
+        if (Math.Abs(dpi.DpiScaleX - 1) > 0.001 || Math.Abs(dpi.DpiScaleY - 1) > 0.001 || screen.WorkingArea.Width < 600 || screen.WorkingArea.Height < 400)
+        {
+            Console.WriteLine("SKIP: Raster comparison requires a 100% DPI desktop of at least 600x400.");
+            return;
+        }
+        window.SetCompositionExperiment(false);
+        window.SetRinglightState(false);
+        PumpFor(550);
+        const int width = 320, height = 200;
+        var bounds = new System.Drawing.Rectangle(screen.WorkingArea.Left + 60, screen.WorkingArea.Top + 60, width, height);
+        var background = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize,
+            Left = bounds.Left, Top = bounds.Top, Width = width, Height = height, Background = Brushes.Black };
+        var color = System.Windows.Media.Color.FromRgb(246, 203, 141);
+        var brush = new SolidColorBrush(color);
+        var canvas = new Grid { Width = width, Height = height, Background = Brushes.Black };
+        canvas.Children.Add(new GlowBorder { Width = 280, Height = 160, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(20, 20, 0, 0), BorderThickness = new Thickness(30),
+            CornerRadius = new CornerRadius(44), BorderBrush = brush, Opacity = 0.55 });
+        canvas.Children.Add(new Border { Width = 280, Height = 160, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(20, 20, 0, 0), BorderThickness = new Thickness(30),
+            CornerRadius = new CornerRadius(44), BorderBrush = brush });
+        canvas.Measure(new Size(width, height)); canvas.Arrange(new Rect(0, 0, width, height)); canvas.UpdateLayout();
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(canvas);
+        var pixels = new byte[width * height * 4]; bitmap.CopyPixels(pixels, width * 4, 0);
+        Type backendType = typeof(MainWindow).Assembly.GetType("WinRinglight.CompositionBackend")!;
+        GetCursorPos(out Point oldCursor);
+        try
+        {
+            background.Show(); PumpFor(150);
+            SetCursorPos(screen.WorkingArea.Right - 1, screen.WorkingArea.Bottom - 1);
+            double[] errors = new double[2];
+            for (int n = 0; n < 2; n++)
+            {
+                object backend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
+                    false, true, 2f, null, false, false, n == 0 ? 1f : 2f })!;
+                try
+                {
+                    Pump(); System.Threading.Thread.Sleep(450); DwmFlush();
+                    IntPtr dc = GetDC(IntPtr.Zero);
+                    uint core = GetPixel(dc, bounds.Left + 160, bounds.Top + 35);
+                    if (Math.Abs((int)(core & 255) - 246) > 16 || Math.Abs((int)((core >> 8) & 255) - 203) > 16)
+                    {
+                        ReleaseDC(IntPtr.Zero, dc);
+                        Console.WriteLine($"PARTIAL: Raster comparison desktop probe unavailable (core=0x{core:X8}).");
+                        return;
+                    }
+                    long diff = 0; int samples = 0;
+                    for (int y = 12; y < 110; y += 2)
+                        for (int x = 12; x < 110; x += 2)
+                        {
+                            int i = (y * width + x) * 4;
+                            uint observed = GetPixel(dc, bounds.Left + x, bounds.Top + y);
+                            diff += Math.Abs((int)(observed & 255) - pixels[i + 2]);
+                            diff += Math.Abs((int)((observed >> 8) & 255) - pixels[i + 1]);
+                            diff += Math.Abs((int)((observed >> 16) & 255) - pixels[i]);
+                            samples += 3;
+                        }
+                    ReleaseDC(IntPtr.Zero, dc);
+                    errors[n] = (double)diff / samples;
+                }
+                finally { ((IDisposable)backend).Dispose(); }
+                Pump();
+            }
+            Console.WriteLine(errors[1] <= errors[0]
+                ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F3}, 2x error={errors[1]:F3}."
+                : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F3}, 2x error={errors[1]:F3}; 2x not closer in this probe.");
+        }
+        finally
+        {
+            SetCursorPos(oldCursor.X, oldCursor.Y);
+            background.Close();
+            window.SetCompositionExperiment(true);
+            window.SetRinglightState(true);
         }
     }
 
