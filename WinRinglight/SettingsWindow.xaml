@@ -170,6 +170,7 @@
                                 <ComboBoxItem Content="Squircle Style"/>
                                 <ComboBoxItem Content="Windows Style "/>
                             </ComboBox>
+                            <CheckBox x:Name="ChkTextCaret" Margin="0,14,0,0" Foreground="White" Checked="TextCaret_Changed" Unchecked="TextCaret_Changed"><TextBlock x:Name="LblTextCaret" TextWrapping="Wrap"/></CheckBox>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -179,7 +180,6 @@
                 <StackPanel Margin="0,15,0,0">
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel>
-                            <CheckBox x:Name="ChkTextCaret" Margin="0,0,0,14" Foreground="White" Checked="TextCaret_Changed" Unchecked="TextCaret_Changed"><TextBlock x:Name="LblTextCaret" TextWrapping="Wrap"/></CheckBox>
                             <TextBlock x:Name="LblCursorFps" FontWeight="Bold" Margin="0,0,0,8"/>
                             <DockPanel LastChildFill="False">
                                 <TextBox x:Name="TxtCursorFps" Width="70" Padding="6" Background="#1E1E1E" Foreground="White" BorderBrush="#555" LostFocus="CursorFps_Changed" PreviewKeyDown="CursorFps_KeyDown"/>

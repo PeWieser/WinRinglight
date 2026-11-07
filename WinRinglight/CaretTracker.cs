@@ -62,7 +62,7 @@ internal sealed class CaretTracker : IDisposable
         {
             // Event-driven in normal operation. A slow fallback check covers
             // applications that do not send accessibility notifications.
-            _wake.WaitOne(500);
+            _wake.WaitOne(50);
             if (_enabled)
             {
                 double elapsed = lastQuery == 0 ? double.MaxValue : Stopwatch.GetElapsedTime(lastQuery).TotalMilliseconds;
@@ -74,7 +74,7 @@ internal sealed class CaretTracker : IDisposable
                 IntPtr foreground = GetForegroundWindow();
                 long started = Stopwatch.GetTimestamp();
                 Point? point = null;
-                try { point = FindCaret(foreground); }
+                try { point = FindCaret(foreground, foreground == previousForeground ? previous : null); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
                 if (!_disposed && _enabled && generation == Volatile.Read(ref _generation) && foreground != IntPtr.Zero &&
                     foreground == GetForegroundWindow() && Stopwatch.GetElapsedTime(started) <= TimeSpan.FromSeconds(1))
@@ -119,37 +119,80 @@ internal sealed class CaretTracker : IDisposable
         _changed(point);
     }
 
-    private static Point? FindCaret(IntPtr foreground)
+    private static Point? FindCaret(IntPtr foreground, Point? previous)
     {
         if (foreground == IntPtr.Zero) return null;
-        // Native GUI carets are cheap and are available even when a UIA
-        // provider advertises an empty caret rectangle.
+        // UIA's active caret is more accurate than GUITHREADINFO in browsers:
+        // their native caret rectangle can represent an entire text field.
+        var focused = AutomationElement.FocusedElement;
+        bool belongsToForeground = FocusBelongsToForeground(focused, foreground);
+        if (belongsToForeground)
+        {
+            var modern = FindAutomationCaret(out _);
+            if (modern != null) return modern;
+            var legacy = FindLegacyCaret(focused, previous);
+            if (legacy != null) return legacy;
+        }
+        // Classic Win32 text controls provide a native caret in client pixels.
         uint thread = GetWindowThreadProcessId(foreground, out _);
         var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
-        if (thread != 0 && GetGUIThreadInfo(thread, ref info) && info.Caret != IntPtr.Zero && info.Focus != IntPtr.Zero)
+        if (thread != 0 && GetGUIThreadInfo(thread, ref info) && info.Caret != IntPtr.Zero && info.Focus != IntPtr.Zero &&
+            GetAncestor(info.Caret, 2) == foreground && GetAncestor(info.Focus, 2) == foreground)
         {
             var p = new NativePoint { X = info.Rect.Left, Y = (info.Rect.Top + info.Rect.Bottom) / 2 };
             if (ClientToScreen(info.Caret, ref p)) return new Point(p.X, p.Y);
         }
-        var modern = FindAutomationCaret(out bool inactive);
-        if (modern != null || inactive) return modern;
-        return FindLegacyCaret();
+        return null;
     }
 
-    // Some providers support only TextPattern, not TextPattern2. Inspect only
-    // collapsed selection geometry; never ask the provider for text content.
-    private static Point? FindLegacyCaret()
+    // UIA can temporarily report the element from the previously focused app.
+    // Do not let that stale caret mask a newly foregrounded browser/window.
+    private static bool FocusBelongsToForeground(AutomationElement? element, IntPtr foreground)
     {
         try
         {
-            var focused = AutomationElement.FocusedElement;
+            for (int depth = 0; element != null && depth < 48; depth++)
+            {
+                int handle = element.Current.NativeWindowHandle;
+                if (handle != 0)
+                {
+                    var root = GetAncestor(new IntPtr(handle), 2);
+                    return root == foreground;
+                }
+                element = TreeWalker.RawViewWalker.GetParent(element);
+            }
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException or InvalidOperationException) { }
+        return false;
+    }
+
+    // TextPattern1 exposes selection but not its active endpoint. For selected
+    // text we preserve the end closest to the last caret position; direction
+    // cannot be determined reliably from this older provider alone.
+    private static Point? FindLegacyCaret(AutomationElement? focused, Point? previous)
+    {
+        try
+        {
             if (focused == null || !focused.TryGetCurrentPattern(TextPattern.Pattern, out object value)) return null;
             var selections = ((TextPattern)value).GetSelection();
             if (selections.Length != 1) return null;
             var selection = selections[0];
-            if (selection.CompareEndpoints(TextPatternRangeEndpoint.Start, selection, TextPatternRangeEndpoint.End) != 0) return null;
+            bool collapsed = selection.CompareEndpoints(TextPatternRangeEndpoint.Start, selection, TextPatternRangeEndpoint.End) == 0;
             var direct = selection.GetBoundingRectangles();
-            if (direct.Length > 0 && !direct[0].IsEmpty)
+            if (!collapsed && direct.Length > 0)
+            {
+                var first = direct[0];
+                var last = direct[direct.Length - 1];
+                var a = ToPoint(first.Left, first.Top, first.Height);
+                var b = ToPoint(last.Right, last.Top, last.Height);
+                if (a == null) return b;
+                if (b == null || previous == null) return a;
+                double Dist(Point p) => Math.Pow((double)p.X - previous.Value.X, 2) + Math.Pow((double)p.Y - previous.Value.Y, 2);
+                return Dist(a.Value) <= Dist(b.Value) ? a : b;
+            }
+            // Some providers report the whole field for a degenerate range;
+            // only trust a narrow rectangle as an actual caret.
+            if (direct.Length > 0 && !direct[0].IsEmpty && direct[0].Width <= Math.Max(4, direct[0].Height / 2))
             {
                 var position = ToPoint(direct[0].Left, direct[0].Top, direct[0].Height);
                 if (position != null) return position;
@@ -199,7 +242,7 @@ internal sealed class CaretTracker : IDisposable
             if (active == 0) { inactive = true; return null; }
             if (range == null) return null;
             range.GetBoundingRectangles(out double[] rects);
-            if (rects == null || rects.Length < 4) return null;
+            if (rects == null || rects.Length < 4 || !double.IsFinite(rects[2]) || rects[2] > Math.Max(4, rects[3] / 2)) return null;
             return ToPoint(rects[0], rects[1], rects[3]);
         }
         catch (COMException) { return null; }

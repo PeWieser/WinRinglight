@@ -18,7 +18,7 @@ internal static class Program
             var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
             var app = new System.Windows.Application();
             var input = new System.Windows.Controls.TextBox { Text = "WPF caret fixture", Margin = new Thickness(20) };
-            var form = new Window { Title = "WPF caret fixture", Left = area.Left + 100, Top = area.Top + 100,
+            var form = new Window { Title = "WPF caret fixture", Left = area.Left + 100, Top = area.Top + 280,
                 Width = 400, Height = 160, Topmost = true, Content = input };
             form.ContentRendered += (_, _) => { form.Activate(); input.Focus(); input.CaretIndex = input.Text.Length; };
             app.Run(form);
@@ -152,6 +152,7 @@ internal static class Program
             TestCaretMasks(window, screens[0]);
             TestCaretTracking(window, screens[0], "--caret-fixture");
             TestCaretTracking(window, screens[0], "--wpf-caret-fixture");
+            TestCaretSwitch(window);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -658,10 +659,15 @@ internal static class Program
             if (fixture == "--wpf-caret-fixture")
             {
                 var legacy = typeof(MainWindow).Assembly.GetType("WinRinglight.CaretTracker")!.GetMethod("FindLegacyCaret", BindingFlags.Static | BindingFlags.NonPublic)!;
-                if (legacy.Invoke(null, null) is not System.Drawing.Point legacyPoint || !screen.WorkingArea.Contains(legacyPoint))
+                if (legacy.Invoke(null, new object?[] { System.Windows.Automation.AutomationElement.FocusedElement, null }) is not System.Drawing.Point legacyPoint || !screen.WorkingArea.Contains(legacyPoint))
                     throw new Exception("Legacy UI Automation text selection geometry was not detected for WPF.");
                 Console.WriteLine("PASS: Legacy UI Automation fallback detects external WPF caret geometry.");
             }
+            keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(0x41, 0, 0, UIntPtr.Zero);
+            keybd_event(0x41, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero);
+            PumpFor(700);
+            if (field.GetValue(window) is not System.Drawing.Point selected || !screen.WorkingArea.Contains(selected))
+                throw new Exception($"Selected text lost its caret cutout ({fixture}).");
             for (int i = 0; i < 4; i++) { keybd_event(0x25, 0, 0, UIntPtr.Zero); keybd_event(0x25, 0, 2, UIntPtr.Zero); }
             for (int i = 0; i < 30 && Equals(field.GetValue(window), caret); i++) PumpFor(100);
             if (field.GetValue(window) is not System.Drawing.Point moved || moved == caret)
@@ -676,6 +682,37 @@ internal static class Program
             if (!process.HasExited) process.Kill();
             Config.Current.TextCaretCutout = false;
             window.RefreshCaretTracking();
+        }
+    }
+
+    private static void TestCaretSwitch(MainWindow window)
+    {
+        if (Environment.ProcessPath == null || System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) return;
+        Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
+        var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        using var first = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--caret-fixture") { UseShellExecute = false })!;
+        System.Diagnostics.Process? second = null;
+        try
+        {
+            for (int i = 0; i < 50 && field.GetValue(window) == null; i++) PumpFor(100);
+            if (field.GetValue(window) is not System.Drawing.Point a) throw new Exception("First app caret missing.");
+            second = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "--wpf-caret-fixture") { UseShellExecute = false })!;
+            for (int i = 0; i < 50; i++)
+            {
+                PumpFor(100);
+                if (field.GetValue(window) is System.Drawing.Point p && Math.Abs(p.Y - a.Y) > 100) break;
+            }
+            if (field.GetValue(window) is not System.Drawing.Point b || Math.Abs(b.Y - a.Y) <= 100)
+                throw new Exception($"Caret did not follow the newly focused app: first={a}, current={field.GetValue(window)}.");
+            // The first app was never clicked or explicitly defocused; only the
+            // second window took foreground, matching the browser-switch report.
+            Console.WriteLine("PASS: Caret follows a second app without clearing the first app's focused text field.");
+        }
+        finally
+        {
+            if (!first.HasExited) first.Kill();
+            if (second != null) { if (!second.HasExited) second.Kill(); second.Dispose(); }
+            Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
         }
     }
 
