@@ -744,14 +744,20 @@ internal static class Program
             if (process.MainWindowHandle == IntPtr.Zero) throw new Exception("Chrome window not available.");
             SetForegroundWindow(process.MainWindowHandle); PumpFor(500);
             // Ctrl+L, type a known address-bar string, then compare Home and End.
-            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false);
-            for (int i = 0; i < 12; i++) { Key(0x41, true); Key(0x41, false); }
+            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(250);
+            for (int i = 0; i < 12; i++) { Key(0x41, true); Key(0x41, false); PumpFor(30); }
             Key(0x24, true); Key(0x24, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point beginning) throw new Exception("Chrome address bar start caret was not detected.");
             Key(0x23, true); Key(0x23, false);
             for (int i = 0; i < 30 && Equals(field.GetValue(window), beginning); i++) PumpFor(100);
             if (field.GetValue(window) is not System.Drawing.Point end || end.X <= beginning.X + 25)
-                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}.");
+            {
+                var trackerType = typeof(MainWindow).Assembly.GetType("WinRinglight.CaretTracker")!;
+                var args = new object?[] { false };
+                var modern = trackerType.GetMethod("FindAutomationCaret", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args);
+                var legacy = trackerType.GetMethod("FindLegacyCaret", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, new object?[] { System.Windows.Automation.AutomationElement.FocusedElement, beginning });
+                throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}.");
+            }
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
             Console.WriteLine("PASS: Chrome address bar caret tracks Home/End and remains visible for selected text.");
