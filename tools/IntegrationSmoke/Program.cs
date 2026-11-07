@@ -655,6 +655,13 @@ internal static class Program
             }
             if (field.GetValue(window) is not System.Drawing.Point caret || !screen.WorkingArea.Contains(caret))
                 throw new Exception("Focused external text caret was not detected on the expected screen.");
+            if (fixture == "--wpf-caret-fixture")
+            {
+                var legacy = typeof(MainWindow).Assembly.GetType("WinRinglight.CaretTracker")!.GetMethod("FindLegacyCaret", BindingFlags.Static | BindingFlags.NonPublic)!;
+                if (legacy.Invoke(null, null) is not System.Drawing.Point legacyPoint || !screen.WorkingArea.Contains(legacyPoint))
+                    throw new Exception("Legacy UI Automation text selection geometry was not detected for WPF.");
+                Console.WriteLine("PASS: Legacy UI Automation fallback detects external WPF caret geometry.");
+            }
             for (int i = 0; i < 4; i++) { keybd_event(0x25, 0, 0, UIntPtr.Zero); keybd_event(0x25, 0, 2, UIntPtr.Zero); }
             for (int i = 0; i < 30 && Equals(field.GetValue(window), caret); i++) PumpFor(100);
             if (field.GetValue(window) is not System.Drawing.Point moved || moved == caret)
