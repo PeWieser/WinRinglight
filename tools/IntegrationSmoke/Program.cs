@@ -18,9 +18,11 @@ internal static class Program
         {
             var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
             var app = new System.Windows.Application();
-            var input = new System.Windows.Controls.TextBox { Text = "WPF caret fixture", Margin = new Thickness(20) };
+            var input = new System.Windows.Controls.TextBox { Text = "WPF caret fixture", Margin = new Thickness(10) };
+            var readOnly = new System.Windows.Controls.TextBox { Text = "Read only", IsReadOnly = true, Margin = new Thickness(10) };
+            var container = new StackPanel(); container.Children.Add(input); container.Children.Add(readOnly);
             var form = new Window { Title = "WPF caret fixture", Left = area.Left + 100, Top = area.Top + 280,
-                Width = 400, Height = 160, Topmost = true, Content = input };
+                Width = 400, Height = 180, Topmost = true, Content = container };
             form.ContentRendered += (_, _) => { form.Activate(); input.Focus(); input.CaretIndex = input.Text.Length; };
             app.Run(form);
             return 0;
@@ -671,6 +673,18 @@ internal static class Program
             PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point selected || !screen.WorkingArea.Contains(selected))
                 throw new Exception($"Selected text lost its caret cutout ({fixture}).");
+            if (fixture == "--wpf-caret-fixture")
+            {
+                keybd_event(0x09, 0, 0, UIntPtr.Zero); keybd_event(0x09, 0, 2, UIntPtr.Zero);
+                for (int i = 0; i < 25 && field.GetValue(window) != null; i++) PumpFor(100);
+                if (field.GetValue(window) != null) throw new Exception("Read-only focused text field produced a caret cutout.");
+                keybd_event(0x10, 0, 0, UIntPtr.Zero); keybd_event(0x09, 0, 0, UIntPtr.Zero);
+                keybd_event(0x09, 0, 2, UIntPtr.Zero); keybd_event(0x10, 0, 2, UIntPtr.Zero);
+                for (int i = 0; i < 25 && field.GetValue(window) == null; i++) PumpFor(100);
+                if (field.GetValue(window) == null) throw new Exception("Editable field was not restored after read-only focus.");
+                caret = (System.Drawing.Point)field.GetValue(window)!;
+                Console.WriteLine("PASS: Read-only focused text is ignored, editable focus restores the caret.");
+            }
             for (int i = 0; i < 4; i++) { keybd_event(0x25, 0, 0, UIntPtr.Zero); keybd_event(0x25, 0, 2, UIntPtr.Zero); }
             for (int i = 0; i < 30 && Equals(field.GetValue(window), caret); i++) PumpFor(100);
             if (field.GetValue(window) is not System.Drawing.Point moved || moved == caret)
