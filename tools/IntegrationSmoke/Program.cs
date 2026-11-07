@@ -13,6 +13,12 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        // This test manipulates and saves settings. Never run it on a user's machine.
+        if (!string.Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("SKIP: Settings integration smoke test is restricted to an isolated GitHub Actions runner.");
+            return 0;
+        }
         IntPtr desktop = OpenInputDesktop(0, false, 1);
         if (desktop == IntPtr.Zero)
         {
@@ -104,6 +110,7 @@ internal static class Program
             }
             window.SetCompositionExperiment(true);
             if (!window.DevCompositionActive) throw new Exception("Composition reactivation failed: " + window.DevCompositionStatus);
+            TestSettings(window);
             window.ApplyStyleLive(false);
             if (window.DevCompositionActive) throw new Exception("Style-change fallback did not occur.");
             Console.WriteLine("PASS: Composition reactivation and style-change fallback.");
@@ -119,6 +126,66 @@ internal static class Program
             window?.Close();
             application.Shutdown();
         }
+    }
+
+    private static void TestSettings(MainWindow window)
+    {
+        var settings = new SettingsWindow(window);
+        try
+        {
+            settings.Show();
+            Pump();
+            var slider = (Slider)settings.FindName("SliderTemperature");
+            var auto = (CheckBox)settings.FindName("ChkAutoTemp");
+            if (!slider.IsEnabled) throw new Exception("Temperature slider disabled.");
+            auto.IsChecked = true;
+            PumpFor(650);
+            if (!window.DevCompositionActive) throw new Exception("Composition fell back during temperature transition: " + window.DevCompositionStatus);
+            var before = GetCoreColor(window);
+            slider.Value = 3000;
+            Pump();
+            if (Math.Abs(Config.Current.Temperature - 3000) > 0.01 || GetCoreColor(window) != before)
+                throw new Exception("Manual slider changed active automatic color or failed to save value.");
+            auto.IsChecked = false;
+            PumpFor(650);
+            var after = GetCoreColor(window);
+            if (after.R != 250 || after.G != 186 || after.B != 95)
+                throw new Exception($"Temperature transition ended at wrong color: {after}");
+            var fps = (TextBox)settings.FindName("TxtCursorFps");
+            fps.Text = "90";
+            fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            if (Config.Current.CursorMaxFps != 90 || !window.DevCompositionActive)
+                throw new Exception("FPS setting did not update or caused fallback.");
+            var unlimited = (CheckBox)settings.FindName("ChkUnlimitedFps");
+            unlimited.IsChecked = true;
+            if (!Config.Current.CursorUnlimitedFps || !window.DevCompositionActive)
+                throw new Exception("Unlimited cursor mode did not activate or caused fallback.");
+            unlimited.IsChecked = false;
+            fps.Text = "60";
+            fps.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            if (Config.Current.CursorMaxFps != 60 || Config.Current.CursorUnlimitedFps)
+                throw new Exception("Cursor FPS setting did not restore.");
+            Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider and cursor FPS modes.");
+        }
+        finally { settings.Close(); }
+    }
+
+    private static Windows.UI.Color GetCoreColor(MainWindow window)
+    {
+        object backend = typeof(MainWindow).GetField("_compositionBackend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)
+            ?? throw new Exception("Composition backend missing.");
+        var brush = (Windows.UI.Composition.CompositionColorBrush?)backend.GetType().GetField("_coreBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)
+            ?? throw new Exception("Composition color brush missing.");
+        return brush.Color;
+    }
+
+    private static void PumpFor(int milliseconds)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };
+        timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
     }
 
     private static IntPtr GetCompositionHwnd(MainWindow window)
