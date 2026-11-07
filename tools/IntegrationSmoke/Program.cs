@@ -578,7 +578,7 @@ internal static class Program
             for (int n = 0; n < 2; n++)
             {
                 object backend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
-                    false, true, 2f, null, false, false, n == 0 ? 1f : 2f })!;
+                    false, true, 2f, null, false, false, n == 0 ? 1f : 2f, false })!;
                 try
                 {
                     Pump(); System.Threading.Thread.Sleep(450); DwmFlush();
