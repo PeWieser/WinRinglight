@@ -762,8 +762,9 @@ internal static class Program
                     detail += $"value={( (System.Windows.Automation.ValuePattern)val).Current.Value}; ";
                 if (focus.TryGetCurrentPattern(System.Windows.Automation.TextPattern.Pattern, out object txt))
                 {
-                    var sels = ((System.Windows.Automation.TextPattern)txt).GetSelection();
-                    foreach (var sel in sels) detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
+                    var textPattern = (System.Windows.Automation.TextPattern)txt;
+                    var sels = textPattern.GetSelection();
+                    foreach (var sel in sels) detail += $"range={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, sel, System.Windows.Automation.Text.TextPatternRangeEndpoint.End)}, offset={sel.CompareEndpoints(System.Windows.Automation.Text.TextPatternRangeEndpoint.Start, textPattern.DocumentRange, System.Windows.Automation.Text.TextPatternRangeEndpoint.Start)}, rects={string.Join("/", sel.GetBoundingRectangles().Select(r => r.ToString()))}; ";
                 }
                 throw new Exception($"Chrome address bar caret did not move to end: start={beginning}, end={field.GetValue(window)}, modern={modern}, inactive={args[0]}, legacy={legacy}, focus={focus.Current.Name} {detail}.");
             }
