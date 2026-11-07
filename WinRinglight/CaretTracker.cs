@@ -49,12 +49,13 @@ internal sealed class CaretTracker : IDisposable
             {
                 int generation = Volatile.Read(ref _generation);
                 IntPtr foreground = GetForegroundWindow();
+                long started = Stopwatch.GetTimestamp();
                 Point? point = null;
                 try { point = FindCaret(foreground); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
                 if (!_disposed && !_dispatcher.HasShutdownStarted)
                 {
-                    try { _dispatcher.BeginInvoke(() => Accept(generation, foreground, point)); }
+                    try { _dispatcher.BeginInvoke(() => Accept(generation, foreground, started, point)); }
                     catch (InvalidOperationException) { }
                 }
             }
@@ -62,9 +63,9 @@ internal sealed class CaretTracker : IDisposable
         }
     }
 
-    private void Accept(int generation, IntPtr foreground, Point? point)
+    private void Accept(int generation, IntPtr foreground, long started, Point? point)
     {
-        if (!_enabled || generation != Volatile.Read(ref _generation) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
+        if (!_enabled || generation != Volatile.Read(ref _generation) || Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(1) || foreground == IntPtr.Zero || foreground != GetForegroundWindow()) return;
         _sampleForeground = foreground;
         _lastSuccess = Stopwatch.GetTimestamp();
         Publish(point);

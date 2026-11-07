@@ -677,6 +677,33 @@ internal static class Program
         {
             background.Show(); PumpFor(150);
             SetCursorPos(screen.WorkingArea.Right - 1, screen.WorkingArea.Bottom - 1);
+            // Real desktop pixels: independently remove the ring at the mouse
+            // and caret, then clear only the caret while the mouse remains.
+            foreach (bool tiled in new[] { false, true })
+            {
+                object probe = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
+                    false, true, 25f, null, false, false, 1f, tiled })!;
+                try
+                {
+                    var cursor = backendType.GetMethod("UpdateCursorAt")!;
+                    var caret = backendType.GetMethod("UpdateCaret")!;
+                    int x1 = bounds.Left + 100, x2 = bounds.Left + 220, y = bounds.Top + 35;
+                    void WaitPixels() { Pump(); System.Threading.Thread.Sleep(500); DwmFlush(); }
+                    uint Pixel(int x) { IntPtr dc = GetDC(IntPtr.Zero); uint p = GetPixel(dc, x, y); ReleaseDC(IntPtr.Zero, dc); return p; }
+                    cursor.Invoke(probe, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                    WaitPixels(); uint initial1 = Pixel(x1), initial2 = Pixel(x2);
+                    cursor.Invoke(probe, new object[] { x1, y });
+                    caret.Invoke(probe, new object?[] { new System.Drawing.Point(x2, y) });
+                    WaitPixels(); uint cut1 = Pixel(x1), cut2 = Pixel(x2);
+                    caret.Invoke(probe, new object?[] { null });
+                    WaitPixels(); uint restored1 = Pixel(x1), restored2 = Pixel(x2);
+                    static int RgbSum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
+                    if (RgbSum(initial1) < 300 || RgbSum(initial2) < 300 || RgbSum(cut1) > 40 || RgbSum(cut2) > 40 || RgbSum(restored1) > 40 || RgbSum(restored2) < 300)
+                        throw new Exception($"Caret desktop pixel probe failed (tiled={tiled}): {initial1:X}/{initial2:X} -> {cut1:X}/{cut2:X} -> {restored1:X}/{restored2:X}");
+                }
+                finally { ((IDisposable)probe).Dispose(); }
+            }
+            Console.WriteLine("PASS: Real desktop pixels show separate mouse and caret cutouts and caret-only restoration in both renderers.");
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;
