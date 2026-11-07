@@ -613,6 +613,7 @@ namespace WinRinglight
         public bool DevCacheElements { get; private set; }
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
+        public bool DevSupersampling { get; private set; }
         private CompositionScene? _compositionBackend;
         public bool DevCompositionActive => _compositionBackend != null;
         public string DevCompositionStatus { get; private set; } = "WPF";
@@ -630,10 +631,23 @@ namespace WinRinglight
                     return;
                 }
                 _compositionBackend = new CompositionScene();
+                _compositionBackend.SetSupersampling(DevSupersampling);
                 ConfigureCompositionScene();
                 MainGrid.Visibility = Visibility.Hidden;
                 DevCompositionStatus = "Composition active (experimental)";
                 DevCompositionChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch (Exception ex) { FailComposition(ex); }
+        }
+
+        public void SetDevSupersampling(bool enabled)
+        {
+            DevSupersampling = enabled;
+            if (_compositionBackend == null) return;
+            try
+            {
+                _compositionBackend.SetSupersampling(enabled);
+                ConfigureCompositionScene();
             }
             catch (Exception ex) { FailComposition(ex); }
         }

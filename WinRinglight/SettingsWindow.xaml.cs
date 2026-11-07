@@ -42,6 +42,8 @@ namespace WinRinglight
             TabPerformance.Header = Config.GetText("TabPerformance");
             LblDevTitle.Text = Config.GetText("DevTitle");
             LblDevComposition.Text = Config.GetText("DevComposition");
+            LblDevSupersampling.Text = Config.GetText("DevSupersampling");
+            ChkDevSupersampling.IsChecked = _mainWindow.DevSupersampling;
             _mainWindow.DevCompositionChanged += CompositionStateChanged;
             CompositionStateChanged(null, EventArgs.Empty);
             LblDevDescription.Text = Config.GetText("DevDescription");
@@ -219,6 +221,12 @@ namespace WinRinglight
             }
             _updateTimer.Stop();
             _updateTimer.Start();
+        }
+
+        private void Supersampling_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            _mainWindow.SetDevSupersampling(ChkDevSupersampling.IsChecked == true);
         }
 
         private void Composition_Changed(object sender, RoutedEventArgs e)

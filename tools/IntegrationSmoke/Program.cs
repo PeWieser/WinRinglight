@@ -184,6 +184,16 @@ internal static class Program
                 throw new Exception("Composition style did not change.");
             style.SelectedIndex = 0;
             if (!window.DevCompositionActive) throw new Exception("Style change back caused fallback.");
+            var quality = (CheckBox)settings.FindName("ChkDevSupersampling");
+            quality.IsChecked = true;
+            if (!window.DevCompositionActive || !window.DevSupersampling) throw new Exception("Supersampling toggle failed.");
+            object highBackend = GetFirstBackend(window);
+            float qualityScale = (float)highBackend.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(highBackend)!;
+            if (qualityScale < 1 || qualityScale > 2) throw new Exception("Supersampling scale out of range.");
+            quality.IsChecked = false;
+            float nativeScale = (float)GetFirstBackend(window).GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window))!;
+            if (!window.DevCompositionActive || window.DevSupersampling || nativeScale != 1) throw new Exception("Native resolution toggle failed.");
+            Console.WriteLine($"PASS: Optional supersampling toggles safely; scale={qualityScale:F2} then {nativeScale:F2}.");
             var monitorItems = (ItemsControl)settings.FindName("MonitorItemsControl");
             object? sourceBefore = monitorItems.ItemsSource;
             int selectionCount = Config.Current.SelectedMonitors.Count;

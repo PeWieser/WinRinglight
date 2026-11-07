@@ -204,6 +204,7 @@
                             <TextBlock x:Name="LblDevDescription" TextWrapping="Wrap" Foreground="#AAAAAA" Margin="0,0,0,14"/>
                             <CheckBox x:Name="ChkDevComposition" Margin="0,0,0,5" Checked="Composition_Changed" Unchecked="Composition_Changed"><TextBlock x:Name="LblDevComposition" TextWrapping="Wrap"/></CheckBox>
                             <TextBlock x:Name="LblCompositionStatus" Foreground="#AFCAB1" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                            <CheckBox x:Name="ChkDevSupersampling" Margin="0,0,0,12" Checked="Supersampling_Changed" Unchecked="Supersampling_Changed"><TextBlock x:Name="LblDevSupersampling" TextWrapping="Wrap"/></CheckBox>
                             <CheckBox x:Name="ChkDevElementCache" Margin="0,0,0,12" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevElementCache" TextWrapping="Wrap"/></CheckBox>
                             <CheckBox x:Name="ChkDevGroupCache" Margin="0,0,0,12" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevGroupCache" TextWrapping="Wrap"/></CheckBox>
                             <CheckBox x:Name="ChkDevNoGlow" Checked="DevExperiment_Changed" Unchecked="DevExperiment_Changed"><TextBlock x:Name="LblDevNoGlow" TextWrapping="Wrap"/></CheckBox>

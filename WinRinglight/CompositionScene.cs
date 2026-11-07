@@ -11,6 +11,7 @@ internal sealed class CompositionScene : IDisposable
     private CompositionLayout.Piece[] _layout = Array.Empty<CompositionLayout.Piece>();
     private float _cursorRadius;
     private bool _sharedGeometry;
+    private float _maximumRasterScale = 1;
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible)
@@ -31,7 +32,7 @@ internal sealed class CompositionScene : IDisposable
                 // A single spanned ring must use one scale on all pieces or its
                 // outlines will split at a mixed-DPI monitor boundary.
                 float? sharedScale = sharedGeometry && replacements.Count > 0 ? replacements[0].DpiScale : null;
-                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight));
+                replacements.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, _maximumRasterScale));
             }
         }
         catch
@@ -45,6 +46,14 @@ internal sealed class CompositionScene : IDisposable
         _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
         _sharedGeometry = sharedGeometry;
+    }
+
+    public void SetSupersampling(bool enabled)
+    {
+        float value = enabled ? 2 : 1;
+        if (_maximumRasterScale == value) return;
+        _maximumRasterScale = value;
+        InvalidateLayout();
     }
 
     public void InvalidateLayout() => _cursorRadius = -1;

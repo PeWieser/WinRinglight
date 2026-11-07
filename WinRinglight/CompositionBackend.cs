@@ -75,7 +75,7 @@ internal sealed class CompositionBackend : IDisposable
             // Rasterise the vector ring at higher resolution before downsampling.
             // Bound each surface dimension to avoid excessive allocation on 4K+
             // displays; the cursor mask stays at native resolution.
-            _rasterScale = Math.Max(1f, Math.Min(sampleScaleOverride ?? 2f, 4096f / Math.Max(_width, _height)));
+            _rasterScale = Math.Max(1f, Math.Min(sampleScaleOverride ?? 1f, 4096f / Math.Max(_width, _height)));
             _ring = Keep(_compositor.CreateShapeVisual());
             _ring.Size = size * _rasterScale;
             SetRing(thickness, rounded, kelvin);
@@ -160,6 +160,19 @@ internal sealed class CompositionBackend : IDisposable
                 var shape = KeepRing(_compositor.CreateSpriteShape(contour));
                 shape.StrokeBrush = brush;
                 shape.StrokeThickness = 2 * blur * fraction * _rasterScale;
+                _ring.Shapes.Add(shape);
+            }
+        }
+        // Keep the previously tested inexpensive edge-softening contours.
+        foreach (var edge in new[] { (spread: 3f, alpha: (byte)30), (spread: 2f, alpha: (byte)65), (spread: 1f, alpha: (byte)110) })
+        {
+            var brush = KeepRing(_compositor.CreateColorBrush(Color.FromArgb(edge.alpha, color.R, color.G, color.B)));
+            _haloBrushes.Add(brush);
+            foreach (var contour in new[] { _outerGeometry, _innerGeometry })
+            {
+                var shape = KeepRing(_compositor.CreateSpriteShape(contour));
+                shape.StrokeBrush = brush;
+                shape.StrokeThickness = edge.spread * _dpiScale * _rasterScale;
                 _ring.Shapes.Add(shape);
             }
         }
