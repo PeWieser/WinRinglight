@@ -28,6 +28,11 @@ internal sealed class CaretTracker : IDisposable
     private long _lastSuccess;
     private IntPtr _sampleForeground;
     private Point? _lastPoint;
+    private sealed class LegacySelectionState
+    {
+        public string? FocusId;
+        public Point? Anchor;
+    }
 
     public CaretTracker(Dispatcher dispatcher, Action<Point?> changed)
     {
@@ -57,6 +62,7 @@ internal sealed class CaretTracker : IDisposable
         Point? previous = null;
         IntPtr previousForeground = IntPtr.Zero;
         int previousGeneration = -1, previousRefresh = -1;
+        var selectionState = new LegacySelectionState();
         long lastQuery = 0;
         while (!_disposed)
         {
@@ -75,7 +81,8 @@ internal sealed class CaretTracker : IDisposable
                 IntPtr foreground = GetForegroundWindow();
                 long started = Stopwatch.GetTimestamp();
                 Point? point = null;
-                try { point = FindCaret(foreground, foreground == previousForeground ? previous : null); }
+                if (foreground != previousForeground || generation != previousGeneration) selectionState = new LegacySelectionState();
+                try { point = FindCaret(foreground, foreground == previousForeground ? previous : null, selectionState); }
                 catch (Exception ex) { Trace.WriteLine("Caret lookup: " + ex.Message); }
                 if (!_disposed && _enabled && generation == Volatile.Read(ref _generation) && foreground != IntPtr.Zero &&
                     foreground == GetForegroundWindow() && Stopwatch.GetElapsedTime(started) <= TimeSpan.FromSeconds(1))
@@ -120,7 +127,7 @@ internal sealed class CaretTracker : IDisposable
         _changed(point);
     }
 
-    private static Point? FindCaret(IntPtr foreground, Point? previous)
+    private static Point? FindCaret(IntPtr foreground, Point? previous, LegacySelectionState state)
     {
         if (foreground == IntPtr.Zero) return null;
         // UIA's active caret is more accurate than GUITHREADINFO in browsers:
@@ -131,7 +138,7 @@ internal sealed class CaretTracker : IDisposable
         {
             var modern = FindAutomationCaret(out _);
             if (modern != null) return modern;
-            var legacy = FindLegacyCaret(focused, previous);
+            var legacy = FindLegacyCaret(focused, previous, state);
             if (legacy != null) return legacy;
         }
         // Classic Win32 text controls provide a native caret in client pixels.
@@ -167,14 +174,19 @@ internal sealed class CaretTracker : IDisposable
         return false;
     }
 
-    // TextPattern1 exposes selection but not its active endpoint. For selected
-    // text we preserve the end closest to the last caret position; direction
-    // cannot be determined reliably from this older provider alone.
-    private static Point? FindLegacyCaret(AutomationElement? focused, Point? previous)
+    // TextPattern1 exposes selection but not its active endpoint. Infer the
+    // anchor from the preceding caret when a selection starts, then follow the
+    // opposite endpoint while it changes. Mouse/RTL selections can be ambiguous.
+    private static Point? FindLegacyCaret(AutomationElement? focused, Point? previous, LegacySelectionState? state)
     {
         try
         {
             if (focused == null || !focused.TryGetCurrentPattern(TextPattern.Pattern, out object value)) return null;
+            if (state != null)
+            {
+                string id = string.Join(",", focused.GetRuntimeId());
+                if (state.FocusId != id) { state.FocusId = id; state.Anchor = null; previous = null; }
+            }
             var selections = ((TextPattern)value).GetSelection();
             if (selections.Length != 1) return null;
             var selection = selections[0];
@@ -187,10 +199,15 @@ internal sealed class CaretTracker : IDisposable
                 var a = ToPoint(first.Left, first.Top, first.Height);
                 var b = ToPoint(last.Right, last.Top, last.Height);
                 if (a == null) return b;
-                if (b == null || previous == null) return a;
-                double Dist(Point p) => Math.Pow((double)p.X - previous.Value.X, 2) + Math.Pow((double)p.Y - previous.Value.Y, 2);
-                return Dist(a.Value) <= Dist(b.Value) ? a : b;
+                if (b == null) return a;
+                Point? anchor = state?.Anchor ?? previous;
+                if (anchor == null) return b;
+                double Dist(Point p) => Math.Pow((double)p.X - anchor.Value.X, 2) + Math.Pow((double)p.Y - anchor.Value.Y, 2);
+                bool firstIsAnchor = Dist(a.Value) <= Dist(b.Value);
+                if (state != null && state.Anchor == null) state.Anchor = firstIsAnchor ? a : b;
+                return firstIsAnchor ? b : a;
             }
+            if (state != null) state.Anchor = null;
             var forward = selection.Clone();
             if (forward.MoveEndpointByUnit(TextPatternRangeEndpoint.End, TextUnit.Character, 1) != 0)
             {
