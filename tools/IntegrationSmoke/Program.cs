@@ -363,12 +363,43 @@ internal static class Program
                 var backend = windows[i]!;
                 var gradient = (Windows.UI.Composition.CompositionRadialGradientBrush)backend.GetType().GetField("_gradient", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
                 var bounds = i == 0 ? left : right;
-                if (Math.Abs(gradient.EllipseCenter.X - (moved.X - bounds.Left)) > 0.01 || Math.Abs(gradient.EllipseCenter.Y - (moved.Y - bounds.Top)) > 0.01)
-                    throw new Exception("Cursor coordinates differ across Composition windows.");
+                bool active = (bool)backend.GetType().GetField("_maskApplied", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                bool shouldBeActive = CursorCoverage.Intersects(bounds, moved.X, moved.Y, 300);
+                if (active != shouldBeActive || (active && (Math.Abs(gradient.EllipseCenter.X - (moved.X - bounds.Left)) > 0.01 || Math.Abs(gradient.EllipseCenter.Y - (moved.Y - bounds.Top)) > 0.01)))
+                    throw new Exception("Cursor mask state or coordinates differ across Composition windows.");
             }
             SetCursorPos(original.X, original.Y);
         }
         else Console.WriteLine("PARTIAL: Multi-window cursor positioning unavailable.");
+        // Explicit cursor trajectories: far from the seam the other monitor
+        // must use its plain ring, while the seam activates BOTH masks. A
+        // one-pixel move must still update each intersecting mask.
+        if (left.Width > 320 && right.Width > 320)
+        {
+            var updateAt = scene.GetType().GetMethod("UpdateCursorAt")!;
+            int y = area.Top + area.Height / 2;
+            int farX = left.Left + 10;
+            updateAt.Invoke(scene, new object[] { farX, y });
+            bool Masked(int i) => (bool)windows[i]!.GetType().GetField("_maskApplied", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[i])!;
+            if (!Masked(0) || Masked(1)) throw new Exception("An unaffected monitor retained a cursor mask.");
+            var rightGradient = (Windows.UI.Composition.CompositionRadialGradientBrush)windows[1]!.GetType().GetField("_gradient", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
+            var rightBefore = rightGradient.EllipseCenter;
+            updateAt.Invoke(scene, new object[] { farX + 1, y });
+            if (Masked(1) || rightGradient.EllipseCenter != rightBefore) throw new Exception("An unaffected monitor was updated for cursor movement.");
+            var idleVisual = (Windows.UI.Composition.SpriteVisual)windows[1]!.GetType().GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1])!;
+            var plainBrush = windows[1]!.GetType().GetField("_ringBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[1]);
+            if (!Equals(idleVisual.Brush, plainBrush)) throw new Exception("An unaffected monitor did not use the unmasked ring.");
+            updateAt.Invoke(scene, new object[] { left.Right - 1, y });
+            if (!Masked(0) || !Masked(1)) throw new Exception("A seam-overlapping cutout did not activate both monitors.");
+            float previous = rightGradient.EllipseCenter.X;
+            updateAt.Invoke(scene, new object[] { left.Right, y });
+            if (!Masked(0) || !Masked(1) || rightGradient.EllipseCenter.X != previous + 1)
+                throw new Exception("One-pixel cursor movement was skipped.");
+            updateAt.Invoke(scene, new object[] { farX, y });
+            if (!Masked(0) || Masked(1)) throw new Exception("Leaving the seam did not restore the idle monitor.");
+            Console.WriteLine("PASS: Idle monitor bypasses mask, seam activates both, and one-pixel movement is preserved.");
+        }
+        else Console.WriteLine("SKIP: Synthetic viewport too narrow for cursor isolation probe.");
         // Simulate an affinity failure on one of the two HWNDs. All windows
         // must be removed and WPF restored, not just the failing window.
         IntPtr first = (IntPtr)windows[0]!.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(windows[0])!;

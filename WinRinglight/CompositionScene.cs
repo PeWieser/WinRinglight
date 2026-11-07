@@ -71,6 +71,7 @@ internal sealed class CompositionScene : IDisposable
     }
     public void SetVisible(bool visible) { foreach (var window in _windows) window.SetVisible(visible); }
     public void UpdateCursor() { foreach (var window in _windows) window.UpdateCursor(); }
+    public void UpdateCursorAt(int x, int y) { foreach (var window in _windows) window.UpdateCursorAt(x, y); }
     public bool SetCaptureExcluded(bool value)
     {
         // Try every window, even if one fails; caller falls back if any failed.

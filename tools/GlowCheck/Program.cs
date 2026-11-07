@@ -53,6 +53,16 @@ internal static class Program
         if (stackedPieces.Length != 2 || stackedPieces[0].ExtendLeft || stackedPieces[0].ExtendRight ||
             stackedPieces[1].ExtendLeft || stackedPieces[1].ExtendRight)
             throw new Exception("Stacked displays must retain side borders.");
+        var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
+        if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
+            !CursorCoverage.Intersects(viewport, -10, 50, 10) ||
+            CursorCoverage.Intersects(viewport, -11, 50, 10) ||
+            CursorCoverage.Intersects(viewport, -9, -9, 10) ||
+            !CursorCoverage.Intersects(viewport, -6, -8, 10) ||
+            !CursorCoverage.Intersects(new System.Drawing.Rectangle(-200, -100, 100, 100), -205, -50, 5) ||
+            CursorCoverage.Intersects(viewport, 50, 50, -1))
+            throw new Exception("Cursor/monitor coverage failed.");
+        Console.WriteLine("Cursor coverage boundary and negative-coordinate checks passed.");
         Console.WriteLine("Composition multi-monitor layout and fullscreen policy checks passed.");
         foreach (double radius in new[] { 3.0, 55.0 })
         {

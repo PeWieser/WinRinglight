@@ -537,7 +537,7 @@ namespace WinRinglight
                 if (_compositionBackend != null)
                 {
                     // Do not invalidate the full WPF mask while Composition is active.
-                    try { _compositionBackend.UpdateCursor(); }
+                    try { _compositionBackend.UpdateCursorAt(_mousePt.X, _mousePt.Y); }
                     catch (Exception ex) { FailComposition(ex); }
                     return;
                 }

@@ -24,6 +24,10 @@ internal sealed class CompositionBackend : IDisposable
     private readonly List<CompositionObject> _objects = new();
     private readonly List<CompositionObject> _ringObjects = new();
     private SpriteVisual? _result;
+    private CompositionSurfaceBrush? _ringBrush;
+    private CompositionMaskBrush? _maskedBrush;
+    private bool _maskApplied;
+    private readonly float _cursorRadius;
     private readonly List<CompositionColorBrush> _haloBrushes = new();
     private CompositionColorBrush? _coreBrush;
     private double _currentThickness;
@@ -49,6 +53,7 @@ internal sealed class CompositionBackend : IDisposable
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
+        _cursorRadius = cursorRadius;
         _extendLeft = extendLeft; _extendRight = extendRight;
         try
         {
@@ -82,9 +87,9 @@ internal sealed class CompositionBackend : IDisposable
             var ringSurface = Keep(_compositor.CreateVisualSurface());
             ringSurface.SourceVisual = _ring;
             ringSurface.SourceSize = size * _rasterScale;
-            var ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
-            ringBrush.Stretch = CompositionStretch.Fill;
-            ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
+            _ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
+            _ringBrush.Stretch = CompositionStretch.Fill;
+            _ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
 
             _gradient = Keep(_compositor.CreateRadialGradientBrush());
             _gradient.MappingMode = CompositionMappingMode.Absolute;
@@ -100,12 +105,13 @@ internal sealed class CompositionBackend : IDisposable
             maskSurface.SourceSize = size;
             var maskBrush = Keep(_compositor.CreateSurfaceBrush(maskSurface));
             maskBrush.Stretch = CompositionStretch.None;
-            var composite = Keep(_compositor.CreateMaskBrush());
-            composite.Source = ringBrush;
-            composite.Mask = maskBrush;
+            _maskedBrush = Keep(_compositor.CreateMaskBrush());
+            _maskedBrush.Source = _ringBrush;
+            _maskedBrush.Mask = maskBrush;
             _result = Keep(_compositor.CreateSpriteVisual());
             _result.Size = size;
-            _result.Brush = composite;
+            _result.Brush = _maskedBrush;
+            _maskApplied = true;
             _result.Opacity = visible ? 1 : 0;
             _target.Root = _result;
             UpdateCursor();
@@ -294,9 +300,24 @@ internal sealed class CompositionBackend : IDisposable
 
     public void UpdateCursor()
     {
-        if (_gradient == null || !GetCursorPos(out Point p) || (p.X == _lastX && p.Y == _lastY)) return;
-        _lastX = p.X; _lastY = p.Y;
-        _gradient.EllipseCenter = new Vector2(p.X - _left, p.Y - _top);
+        if (GetCursorPos(out Point p)) UpdateCursorAt(p.X, p.Y);
+    }
+
+    public void UpdateCursorAt(int x, int y)
+    {
+        if (_gradient == null || _result == null || _ringBrush == null || _maskedBrush == null) return;
+        if (x == _lastX && y == _lastY) return;
+        _lastX = x; _lastY = y;
+        bool intersects = CursorCoverage.Intersects(new System.Drawing.Rectangle(_left, _top, _width, _height), x, y, _cursorRadius);
+        if (!intersects)
+        {
+            // Beyond the cutout radius its mask is uniformly opaque. Use the
+            // ring directly, without updating or compositing a fullscreen mask.
+            if (_maskApplied) { _result.Brush = _ringBrush; _maskApplied = false; }
+            return;
+        }
+        _gradient.EllipseCenter = new Vector2(x - _left, y - _top);
+        if (!_maskApplied) { _result.Brush = _maskedBrush; _maskApplied = true; }
     }
 
     public bool SetCaptureExcluded(bool value) => _hwnd != IntPtr.Zero && SetWindowDisplayAffinity(_hwnd, value ? WdaExcludeFromCapture : WdaNone);
@@ -321,7 +342,7 @@ internal sealed class CompositionBackend : IDisposable
             _ringObjects.Clear();
             for (int i = _objects.Count - 1; i >= 0; i--) DisposeSafely(_objects[i]);
             _objects.Clear();
-            _gradient = null; _ring = null; _result = null; _geometry = null; _outerGeometry = null; _innerGeometry = null;
+            _gradient = null; _ring = null; _result = null; _ringBrush = null; _maskedBrush = null; _maskApplied = false; _geometry = null; _outerGeometry = null; _innerGeometry = null;
             _haloBrushes.Clear(); _coreBrush = null;
             if (_compositor != null) DisposeSafely(_compositor);
             _compositor = null;
