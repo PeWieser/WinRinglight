@@ -169,6 +169,7 @@ internal static class Program
             TestCaretSwitch(window);
             TestCaretWatchdog();
             TestChromeAddressCaret(window);
+            TestChromeDomFields(window);
             window.SetDevTiling(true);
             if (!window.DevCompositionActive || !(bool)GetScene(window).GetType().GetProperty("UsingTiles")!.GetValue(GetScene(window))!)
                 throw new Exception("Could not activate tiled renderer for fullscreen tests: " + window.DevCompositionStatus);
@@ -806,7 +807,7 @@ internal static class Program
         if (chrome == null) { Console.WriteLine("SKIP: Chrome not installed; address bar caret requires real-device testing."); return; }
         string profile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "winringlight-chrome-" + Guid.NewGuid().ToString("N"));
         var start = new System.Diagnostics.ProcessStartInfo(chrome) { UseShellExecute = false };
-        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--force-renderer-accessibility", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
+        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
         Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
         var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
         string? firefox = new[] {
@@ -907,29 +908,7 @@ internal static class Program
             Console.WriteLine("PASS: Chrome address bar caret tracks start/end and remains visible for selected text.");
             if (ff != null) Console.WriteLine("PASS: Chrome address caret detected after switching directly from Firefox with its text field focused.");
 
-            // Real browser DOM: reject a focused read-only control but retain a
-            // contenteditable input. No text content is read by the application.
-            string html = "<html><body><textarea aria-label='Read-only fixture' readonly>Read only text</textarea><div aria-label='Editable fixture' role='textbox' contenteditable='true'>Editable text</div></body></html>";
-            string fixturePath = System.IO.Path.Combine(profile, "caret-fixture.html");
-            System.IO.File.WriteAllText(fixturePath, html);
-            System.Windows.Clipboard.SetText(new Uri(fixturePath).AbsoluteUri);
-            Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(200);
-            Key(0x11, true); Key(0x56, true); Key(0x56, false); Key(0x11, false);
-            Key(0x0d, true); Key(0x0d, false); PumpFor(1200);
-            var root = System.Windows.Automation.AutomationElement.FromHandle(process.MainWindowHandle);
-            System.Windows.Automation.AutomationElement? Find(string name) => root.FindFirst(System.Windows.Automation.TreeScope.Descendants,
-                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.NameProperty, name));
-            System.Windows.Automation.AutomationElement? ro = null, editable = null;
-            for (int i = 0; i < 40 && (ro == null || editable == null); i++)
-            { ro = Find("Read-only fixture"); editable = Find("Editable fixture"); if (ro == null || editable == null) PumpFor(100); }
-            if (ro == null || editable == null) throw new Exception("Chrome editable/read-only fixtures were not exposed to UI Automation.");
-            ro.SetFocus();
-            for (int i = 0; i < 30 && field.GetValue(window) != null; i++) PumpFor(100);
-            if (field.GetValue(window) != null) throw new Exception("Chrome read-only field left a false caret cutout.");
-            editable.SetFocus();
-            for (int i = 0; i < 30 && field.GetValue(window) == null; i++) PumpFor(100);
-            if (field.GetValue(window) == null) throw new Exception("Chrome contenteditable field did not show a caret cutout.");
-            Console.WriteLine("PASS: Chrome read-only field is ignored and contenteditable field is tracked.");
+
         }
         finally
         {
@@ -941,6 +920,49 @@ internal static class Program
             try { System.IO.Directory.Delete(profile, true); } catch { }
         }
         static void Key(byte key, bool down) => keybd_event(key, 0, down ? 0u : 2u, UIntPtr.Zero);
+    }
+
+    private static void TestChromeDomFields(MainWindow window)
+    {
+        string? chrome = new[] {
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe")
+        }.FirstOrDefault(System.IO.File.Exists);
+        if (chrome == null) { Console.WriteLine("SKIP: Chrome DOM accessibility fixture unavailable."); return; }
+        string profile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "winringlight-dom-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(profile);
+        string path = System.IO.Path.Combine(profile, "fixture.html");
+        System.IO.File.WriteAllText(path, "<html><body><textarea aria-label='Read-only fixture' readonly>Read only text</textarea><div aria-label='Editable fixture' role='textbox' contenteditable='true'>Editable text</div></body></html>");
+        var start = new System.Diagnostics.ProcessStartInfo(chrome) { UseShellExecute = false };
+        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--force-renderer-accessibility", "--new-window", new Uri(path).AbsoluteUri }) start.ArgumentList.Add(arg);
+        Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
+        var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        using var process = System.Diagnostics.Process.Start(start) ?? throw new Exception("Could not start Chrome DOM fixture.");
+        try
+        {
+            for (int i = 0; i < 100; i++) { process.Refresh(); if (process.HasExited) throw new Exception("Chrome DOM fixture exited."); if (process.MainWindowHandle != IntPtr.Zero) break; PumpFor(100); }
+            process.Refresh(); if (process.MainWindowHandle == IntPtr.Zero) throw new Exception("Chrome DOM fixture window unavailable.");
+            SetForegroundWindow(process.MainWindowHandle); PumpFor(1000);
+            var root = System.Windows.Automation.AutomationElement.FromHandle(process.MainWindowHandle);
+            System.Windows.Automation.AutomationElement? Find(string name) => root.FindFirst(System.Windows.Automation.TreeScope.Descendants,
+                new System.Windows.Automation.PropertyCondition(System.Windows.Automation.AutomationElement.NameProperty, name));
+            System.Windows.Automation.AutomationElement? ro = null, editable = null;
+            for (int i = 0; i < 40 && (ro == null || editable == null); i++)
+            { ro = Find("Read-only fixture"); editable = Find("Editable fixture"); if (ro == null || editable == null) PumpFor(100); }
+            if (ro == null || editable == null) throw new Exception("Chrome editable/read-only fixtures were not exposed to UI Automation.");
+            ro.SetFocus(); PumpFor(300);
+            if (field.GetValue(window) != null) throw new Exception("Chrome read-only field left a false caret cutout.");
+            editable.SetFocus();
+            for (int i = 0; i < 40 && field.GetValue(window) == null; i++) PumpFor(100);
+            if (field.GetValue(window) == null) throw new Exception("Chrome contenteditable field did not show a caret cutout.");
+            Console.WriteLine("PASS: Chrome read-only field is ignored and contenteditable field is tracked (renderer accessibility enabled).");
+        }
+        finally
+        {
+            try { if (!process.HasExited) { process.Kill(true); process.WaitForExit(); } } catch { }
+            Config.Current.TextCaretCutout = false; window.RefreshCaretTracking();
+            try { System.IO.Directory.Delete(profile, true); } catch { }
+        }
     }
 
     private static void TestRasterQuality(MainWindow window, System.Windows.Forms.Screen screen)
