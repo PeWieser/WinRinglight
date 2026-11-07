@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using WinRinglight;
 
@@ -42,6 +43,19 @@ internal static class Program
             window.SetRinglightState(true);
             window.SetCompositionExperiment(true);
             if (!window.DevCompositionActive) throw new Exception("Composition failed to activate: " + window.DevCompositionStatus);
+            IntPtr compositionHwnd = GetCompositionHwnd(window);
+            int extended = GetWindowLong(compositionHwnd, -20);
+            if ((extended & 0x00080000) == 0 || (extended & 0x20) == 0 || (extended & 0x00200000) == 0)
+                throw new Exception("Composition overlay is missing expected layered, transparent or no-redirection flags.");
+            var working = screens[0].WorkingArea;
+            IntPtr wpfHwnd = new WindowInteropHelper(window).Handle;
+            var testPoint = new Point { X = working.Left + working.Width / 2, Y = working.Top + working.Height / 3 };
+            IntPtr hit = WindowFromPoint(testPoint);
+            if (hit == compositionHwnd || hit == wpfHwnd)
+                throw new Exception("Overlay appears to intercept the test point.");
+            Console.WriteLine(hit == IntPtr.Zero
+                ? "PARTIAL: Window flags verified; no underlying window found for click-through probe."
+                : "PASS: Window flags and cross-window hit-test probe.");
             var grid = (Grid)window.FindName("MainGrid");
             if (grid.Visibility != Visibility.Hidden) throw new Exception("WPF grid not hidden in Composition mode.");
             var mask = (RadialGradientBrush)grid.OpacityMask;
@@ -56,9 +70,13 @@ internal static class Program
             Config.Current.HideFromCapture = true;
             window.ApplyCaptureAffinity();
             if (!window.DevCompositionActive) throw new Exception("Capture exclusion caused fallback: " + window.DevCompositionStatus);
+            if (!GetWindowDisplayAffinity(compositionHwnd, out uint affinity) || affinity != 0x11)
+                throw new Exception("Composition window did not report capture exclusion.");
             Config.Current.HideFromCapture = false;
             window.ApplyCaptureAffinity();
             if (!window.DevCompositionActive) throw new Exception("Clearing capture exclusion caused fallback.");
+            if (!GetWindowDisplayAffinity(compositionHwnd, out affinity) || affinity != 0)
+                throw new Exception("Composition capture exclusion did not clear.");
             window.SetRinglightState(false);
             if (!window.DevCompositionActive) throw new Exception("Turning off caused Composition fallback.");
             window.SetRinglightState(true);
@@ -103,6 +121,14 @@ internal static class Program
         }
     }
 
+    private static IntPtr GetCompositionHwnd(MainWindow window)
+    {
+        object backend = typeof(MainWindow).GetField("_compositionBackend", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)
+            ?? throw new Exception("Composition backend missing.");
+        return (IntPtr)(backend.GetType().GetField("_hwnd", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)
+            ?? throw new Exception("Composition HWND missing."));
+    }
+
     private static void Pump()
     {
         var frame = new DispatcherFrame();
@@ -114,4 +140,7 @@ internal static class Program
     [DllImport("user32.dll")] private static extern bool CloseDesktop(IntPtr desktop);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] private static extern bool GetWindowDisplayAffinity(IntPtr hwnd, out uint affinity);
 }
