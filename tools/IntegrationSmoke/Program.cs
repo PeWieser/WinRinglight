@@ -806,7 +806,7 @@ internal static class Program
         if (chrome == null) { Console.WriteLine("SKIP: Chrome not installed; address bar caret requires real-device testing."); return; }
         string profile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "winringlight-chrome-" + Guid.NewGuid().ToString("N"));
         var start = new System.Diagnostics.ProcessStartInfo(chrome) { UseShellExecute = false };
-        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
+        foreach (var arg in new[] { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--force-renderer-accessibility", "--new-window", "about:blank" }) start.ArgumentList.Add(arg);
         Config.Current.TextCaretCutout = true; window.RefreshCaretTracking();
         var field = typeof(MainWindow).GetField("_caretPosition", BindingFlags.Instance | BindingFlags.NonPublic)!;
         string? firefox = new[] {
@@ -910,7 +910,9 @@ internal static class Program
             // Real browser DOM: reject a focused read-only control but retain a
             // contenteditable input. No text content is read by the application.
             string html = "<html><body><textarea aria-label='Read-only fixture' readonly>Read only text</textarea><div aria-label='Editable fixture' role='textbox' contenteditable='true'>Editable text</div></body></html>";
-            System.Windows.Clipboard.SetText("data:text/html," + Uri.EscapeDataString(html));
+            string fixturePath = System.IO.Path.Combine(profile, "caret-fixture.html");
+            System.IO.File.WriteAllText(fixturePath, html);
+            System.Windows.Clipboard.SetText(new Uri(fixturePath).AbsoluteUri);
             Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(200);
             Key(0x11, true); Key(0x56, true); Key(0x56, false); Key(0x11, false);
             Key(0x0d, true); Key(0x0d, false); PumpFor(1200);
