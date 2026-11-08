@@ -53,6 +53,30 @@ internal static class Program
         if (stackedPieces.Length != 2 || stackedPieces[0].ExtendLeft || stackedPieces[0].ExtendRight ||
             stackedPieces[1].ExtendLeft || stackedPieces[1].ExtendRight)
             throw new Exception("Stacked displays must retain side borders.");
+        // Union outlines: check shared edges disappear, exposed step segments
+        // remain, and disconnected monitors never get a connecting line.
+        static void CheckOutline(string name, System.Drawing.Rectangle[] screens, params DisplayOutline.Edge[] expected)
+        {
+            var actual = DisplayOutline.Build(screens);
+            if (actual.Length != expected.Length || !new HashSet<DisplayOutline.Edge>(actual).SetEquals(expected))
+                throw new Exception($"{name} display outline mismatch: {string.Join(", ", actual)}");
+        }
+        var T = DisplayOutline.Side.Top; var B = DisplayOutline.Side.Bottom;
+        var L = DisplayOutline.Side.Left; var R = DisplayOutline.Side.Right;
+        CheckOutline("stacked", new[] { new System.Drawing.Rectangle(0, -100, 200, 100), new System.Drawing.Rectangle(50, 0, 100, 100) },
+            new(T, -100, 0, 200), new(B, 0, 0, 50), new(B, 0, 150, 200), new(B, 100, 50, 150),
+            new(L, 0, -100, 0), new(L, 50, 0, 100), new(R, 150, 0, 100), new(R, 200, -100, 0));
+        CheckOutline("cross", new[] { new System.Drawing.Rectangle(0, 0, 100, 300), new System.Drawing.Rectangle(-100, 100, 300, 100) },
+            new(T, 0, 0, 100), new(T, 100, -100, 0), new(T, 100, 100, 200),
+            new(B, 200, -100, 0), new(B, 200, 100, 200), new(B, 300, 0, 100),
+            new(L, -100, 100, 200), new(L, 0, 0, 100), new(L, 0, 200, 300),
+            new(R, 100, 0, 100), new(R, 100, 200, 300), new(R, 200, 100, 200));
+        CheckOutline("gap", new[] { new System.Drawing.Rectangle(-100, 0, 100, 100), new System.Drawing.Rectangle(10, 0, 100, 100) },
+            new(T, 0, -100, 0), new(T, 0, 10, 110), new(B, 100, -100, 0), new(B, 100, 10, 110),
+            new(L, -100, 0, 100), new(L, 10, 0, 100), new(R, 0, 0, 100), new(R, 110, 0, 100));
+        CheckOutline("overlap", new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(50, 0, 100, 100) },
+            new(T, 0, 0, 150), new(B, 100, 0, 150), new(L, 0, 0, 100), new(R, 150, 0, 100));
+        Console.WriteLine("Display union outlines: stacked, cross, gap and overlap checks passed.");
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
             !CursorCoverage.Intersects(viewport, -10, 50, 10) ||
