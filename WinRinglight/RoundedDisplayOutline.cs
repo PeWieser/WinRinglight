@@ -53,7 +53,7 @@ public static class RoundedDisplayOutline
                     int i = step % corners.Count;
                     context.LineTo(incoming[i], true, false);
                     if (radii[i] > 0)
-                        context.ArcTo(outgoing[i], new Size(radii[i], radii[i]), 0, false,
+                        context.ArcTo(outgoing[i], new System.Windows.Size(radii[i], radii[i]), 0, false,
                             clockwise[i] ? SweepDirection.Clockwise : SweepDirection.Counterclockwise, true, false);
                 }
             }
