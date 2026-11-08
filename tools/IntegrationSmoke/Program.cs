@@ -612,6 +612,17 @@ internal static class Program
         setCaret.Invoke(window, new object?[] { caret });
         if (outer.OpacityMask is not RadialGradientBrush || ((Grid)window.FindName("MainGrid")).OpacityMask is not RadialGradientBrush)
             throw new Exception("WPF did not retain both caret and mouse masks.");
+        var selection = new System.Drawing.Rectangle(area.Left + 50, area.Top + 20, 400, 50);
+        typeof(MainWindow).GetMethod("SetTextCutout", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object?[] { caret, selection });
+        var selectionMask = (RadialGradientBrush)outer.OpacityMask;
+        foreach (var corner in new[] { new System.Windows.Point(selection.Left, selection.Top), new System.Windows.Point(selection.Right, selection.Top),
+            new System.Windows.Point(selection.Left, selection.Bottom), new System.Windows.Point(selection.Right, selection.Bottom) })
+        {
+            var local = outer.PointFromScreen(corner);
+            double dx = (local.X - selectionMask.Center.X) / selectionMask.RadiusX, dy = (local.Y - selectionMask.Center.Y) / selectionMask.RadiusY;
+            if (Math.Sqrt(dx * dx + dy * dy) > selectionMask.GradientStops[1].Offset + 0.00001)
+                throw new Exception("WPF selection corner is not inside the fully transparent region.");
+        }
         setCaret.Invoke(window, new object?[] { null });
         if (outer.OpacityMask != null) throw new Exception("WPF caret mask did not clear.");
         window.SetCompositionExperiment(true);
@@ -905,7 +916,10 @@ internal static class Program
                 throw new Exception($"Chrome selected text did not follow the active endpoint: end={end}, selection={field.GetValue(window)}.");
             Key(0x11, true); Key(0x41, true); Key(0x41, false); Key(0x11, false); PumpFor(700);
             if (field.GetValue(window) is not System.Drawing.Point) throw new Exception("Chrome address bar selection lost caret.");
-            Console.WriteLine("PASS: Chrome address bar caret tracks start/end and remains visible for selected text.");
+            var selection = typeof(MainWindow).GetField("_textSelection", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
+            if (selection is not System.Drawing.Rectangle selectedBounds || selectedBounds.Width < 25)
+                throw new Exception($"Chrome selected text bounds were not captured: {selection}.");
+            Console.WriteLine("PASS: Chrome address bar caret tracks start/end and selected text geometry.");
             if (ff != null) Console.WriteLine("PASS: Chrome address caret detected after switching directly from Firefox with its text field focused.");
 
 
