@@ -17,7 +17,7 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
     private CompositionGraphicsDevice? _device;
     public CompositionDrawingSurface? Surface { get; private set; }
 
-    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale, bool coreOnly = false, IntPtr pathGeometry = default)
+    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale, bool coreOnly = false, Func<IntPtr, IntPtr>? pathFactory = null)
     {
         try
         {
@@ -45,12 +45,12 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
             finally { Marshal.Release(unk); }
             Surface = _device!.CreateDrawingSurface(new Windows.Foundation.Size(width * scale, height * scale),
                 DirectXPixelFormat.B8G8R8A8UIntNormalized, DirectXAlphaMode.Premultiplied);
-            Draw(scale, coreOnly, pathGeometry);
+            Draw(scale, coreOnly, pathFactory);
         }
         catch { Dispose(); throw; }
     }
 
-    private void Draw(int scale, bool coreOnly, IntPtr pathGeometry)
+    private void Draw(int scale, bool coreOnly, Func<IntPtr, IntPtr>? pathFactory)
     {
         IntPtr unk = MarshalInspectable<CompositionDrawingSurface>.FromManaged(Surface!);
         try
@@ -70,14 +70,20 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                     var transform = (delegate* unmanaged[Stdcall]<IntPtr, Matrix*, void>)vt[30];
                     ColorF transparent = default; clear(dc, &transparent);
                     Matrix matrix = new(scale, 0, 0, scale, offset.X, offset.Y); transform(dc, &matrix);
-                    if (pathGeometry != IntPtr.Zero)
+                    if (pathFactory != null)
                     {
+                        var getFactory = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr*, void>)vt[3];
+                        IntPtr factory = IntPtr.Zero;
+                        getFactory(dc, &factory);
+                        IntPtr pathGeometry;
+                        try { pathGeometry = pathFactory(factory); }
+                        finally { if (factory != IntPtr.Zero) Marshal.Release(factory); }
                         var create = (delegate* unmanaged[Stdcall]<IntPtr, ColorF*, IntPtr, IntPtr*, int>)vt[8];
                         var draw = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, float, IntPtr, void>)vt[22];
                         ColorF white = new(1, 1, 1, 1); IntPtr brush = IntPtr.Zero;
                         Marshal.ThrowExceptionForHR(create(dc, &white, IntPtr.Zero, &brush));
                         try { draw(dc, pathGeometry, brush, 8, IntPtr.Zero); }
-                        finally { if (brush != IntPtr.Zero) Marshal.Release(brush); }
+                        finally { if (brush != IntPtr.Zero) Marshal.Release(brush); if (pathGeometry != IntPtr.Zero) Marshal.Release(pathGeometry); }
                     }
                     else
                     {

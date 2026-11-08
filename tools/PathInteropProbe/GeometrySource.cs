@@ -99,9 +99,8 @@ internal static unsafe class GeometrySource
     private static int TryGetGeometry(IntPtr self, IntPtr factory, IntPtr* result)
     { if (result == null) return unchecked((int)0x80004003); *result = IntPtr.Zero; return unchecked((int)0x80004001); }
 
-    public static IGeometrySource2D Create(Geometry source, out IntPtr nativeGeometry)
+    private static List<Vector2[]> Flatten(Geometry source)
     {
-        nativeGeometry = IntPtr.Zero;
         var flattened = source.GetFlattenedPathGeometry(0.05, ToleranceType.Absolute);
         var loops = new List<Vector2[]>();
         foreach (var figure in flattened.Figures)
@@ -117,8 +116,12 @@ internal static unsafe class GeometrySource
             }
             loops.Add(points.ToArray());
         }
-        Guid factoryId = FactoryId;
-        Marshal.ThrowExceptionForHR(D2D1CreateFactory(1, &factoryId, IntPtr.Zero, out IntPtr factory));
+        return loops;
+    }
+
+    public static IntPtr CreateNative(Geometry source, IntPtr factory)
+    {
+        var loops = Flatten(source);
         IntPtr geometry = IntPtr.Zero;
         try
         {
@@ -146,6 +149,21 @@ internal static unsafe class GeometrySource
                 Marshal.ThrowExceptionForHR(close(sink));
             }
             finally { Marshal.Release(sink); }
+            IntPtr result = geometry;
+            geometry = IntPtr.Zero;
+            return result;
+        }
+        finally { if (geometry != IntPtr.Zero) Marshal.Release(geometry); }
+    }
+
+    public static IGeometrySource2D Create(Geometry source)
+    {
+        Guid factoryId = FactoryId;
+        Marshal.ThrowExceptionForHR(D2D1CreateFactory(1, &factoryId, IntPtr.Zero, out IntPtr factory));
+        IntPtr geometry = IntPtr.Zero;
+        try
+        {
+            geometry = CreateNative(source, factory);
             Instance* instance = (Instance*)NativeMemory.AllocZeroed((nuint)sizeof(Instance));
             instance->InspectableVtable = InspectableVtable;
             instance->InspectableOwner = (IntPtr)instance;
@@ -157,8 +175,6 @@ internal static unsafe class GeometrySource
             try
             {
                 var result = MarshalInterface<IGeometrySource2D>.FromAbi((IntPtr)instance);
-                Marshal.AddRef(instance->Geometry);
-                nativeGeometry = instance->Geometry;
                 return result;
             }
             finally { Marshal.Release((IntPtr)instance); }

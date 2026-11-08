@@ -30,7 +30,7 @@ internal static class Program
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var outline = RoundedDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20);
-            var source = GeometrySource.Create(outline, out IntPtr nativeGeometry);
+            var source = GeometrySource.Create(outline);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
             using var brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
@@ -71,8 +71,8 @@ internal static class Program
             try
             {
                 // Independent 2x Direct2D path surface, displayed at 1x, uses
-                // the exact same geometry object as the Composition prototype.
-                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathGeometry: nativeGeometry);
+                // the same path data as the Composition prototype, rebuilt for the drawing factory.
+                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => GeometrySource.CreateNative(outline, factory));
                 using var surfaceBrush = compositor.CreateSurfaceBrush(raster.Surface);
                 surfaceBrush.Stretch = CompositionStretch.Fill;
                 surfaceBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
@@ -91,7 +91,7 @@ internal static class Program
                 }
                 finally { ReleaseDC(IntPtr.Zero, dc); }
             }
-            finally { Marshal.Release(nativeGeometry); }
+            finally { }
             ring.Shapes.Clear();
             return 0;
         }
