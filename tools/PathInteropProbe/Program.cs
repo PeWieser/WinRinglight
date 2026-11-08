@@ -113,7 +113,7 @@ internal static class Program
             {
                 // Independent 2x Direct2D path surface, displayed at 1x, uses
                 // the same path data as the Composition prototype, rebuilt for the drawing factory.
-                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => GeometrySource.CreateNative(outline, factory));
+                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => GeometrySource.CreateNativeSet(factory, layers.Core, layers.Outer, layers.Inner));
                 var ringBrush = (CompositionSurfaceBrush)type.GetField("_ringBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
                 ringBrush.Surface = raster.Surface;
                 ringBrush.Stretch = CompositionStretch.Fill;
@@ -127,7 +127,7 @@ internal static class Program
                     uint roundedCorner = GetPixel(dc, bounds.Left + 105, bounds.Top + 25);
                     if ((edge & 0xffffff) < 0xc0c0c0 || (voidPixel & 0xffffff) > 0x202020 || (roundedCorner & 0xffffff) > 0x202020)
                         throw new Exception($"Direct2D 2x path pixels invalid: edge={edge:X}, inner={voidPixel:X}, corner={roundedCorner:X}.");
-                    Console.WriteLine("PASS: Direct2D 2x surface renders the same inset, rounded union path without inner edge.");
+                    Console.WriteLine("PASS: Direct2D 2x surface renders inset rounded core/glow paths without inner edge.");
                 }
                 finally { ReleaseDC(IntPtr.Zero, dc); }
                 VerifySelection();

@@ -156,6 +156,21 @@ internal static unsafe class GeometrySource
         finally { if (geometry != IntPtr.Zero) Marshal.Release(geometry); }
     }
 
+    public static IntPtr[] CreateNativeSet(IntPtr factory, params Geometry[] geometries)
+    {
+        var paths = new IntPtr[geometries.Length];
+        try
+        {
+            for (int i = 0; i < paths.Length; i++) paths[i] = CreateNative(geometries[i], factory);
+            return paths;
+        }
+        catch
+        {
+            foreach (var path in paths) if (path != IntPtr.Zero) Marshal.Release(path);
+            throw;
+        }
+    }
+
     public static IGeometrySource2D Create(Geometry source)
     {
         Guid factoryId = FactoryId;
