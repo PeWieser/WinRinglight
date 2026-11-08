@@ -17,7 +17,7 @@ public static class InsetDisplayOutline
         if (!double.IsFinite(inset) || inset < 0) throw new ArgumentOutOfRangeException(nameof(inset));
         var boundary = RoundedDisplayOutline.Create(displays, cornerRadius);
         if (boundary.IsEmpty() || inset == 0) return boundary;
-        var pen = new Pen(Brushes.Black, inset * 2) { LineJoin = PenLineJoin.Round };
+        var pen = new System.Windows.Media.Pen(System.Windows.Media.Brushes.Black, inset * 2) { LineJoin = PenLineJoin.Round };
         pen.Freeze();
         var perimeterBand = boundary.GetWidenedPathGeometry(pen, 0.1, ToleranceType.Absolute);
         var inner = Geometry.Combine(boundary, perimeterBand, GeometryCombineMode.Exclude, null, 0.1, ToleranceType.Absolute);
