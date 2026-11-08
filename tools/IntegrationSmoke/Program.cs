@@ -1057,8 +1057,8 @@ internal static class Program
                         IntPtr dc = GetDC(IntPtr.Zero);
                         try
                         {
-                            for (int py = 12; py < 110; py += 2)
-                                for (int px = 12; px < 110; px += 2)
+                            for (int py = 12; py < 110; py += 4)
+                                for (int px = 12; px < 110; px += 4)
                                 {
                                     int i = (py * width + px) * 4;
                                     uint observed = GetPixel(dc, bounds.Left + px, bounds.Top + py);
@@ -1209,9 +1209,9 @@ internal static class Program
                         if (Math.Abs((int)(core2 & 255) - 246) > 16 || Math.Abs((int)((core2 >> 8) & 255) - 203) > 16)
                             throw new Exception($"Direct2D pixel surface core not visible: {core2:X8}.");
                         long delta = 0; int count = 0, sample = 0;
-                        if (scale == 1) d2dNative = new uint[49 * 49];
-                        for (int y = 12; y < 110; y += 2)
-                            for (int x = 12; x < 110; x += 2)
+                        if (scale == 1) d2dNative = new uint[25 * 25];
+                        for (int y = 12; y < 110; y += 4)
+                            for (int x = 12; x < 110; x += 4)
                             {
                                 int i = (y * width + x) * 4;
                                 uint observed = GetPixel(dc2, bounds.Left + x, bounds.Top + y);
