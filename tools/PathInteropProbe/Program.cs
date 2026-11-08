@@ -135,6 +135,59 @@ internal static class Program
             }
             finally { }
             ring.Shapes.Clear();
+            ((IDisposable)backend).Dispose(); backend = null;
+            // Two actual overlay HWNDs simulate a monitor seam. The same
+            // global contour is translated into each viewport, then selection
+            // masking is verified across both halves.
+            var pieces = new List<object>(); var pathObjects = new List<CompositionObject>();
+            try
+            {
+                for (int part = 0; part < 2; part++)
+                {
+                    var viewport = new Rectangle(bounds.Left + part * 160, bounds.Top, 160, 200);
+                    object piece = Activator.CreateInstance(type, new object?[] { viewport, bounds, 30f, true, 4000d,
+                        false, true, 25f, null, false, false, 1f, false })!;
+                    pieces.Add(piece);
+                    var local = outline.Clone();
+                    local.Transform = new TranslateTransform(-part * 160, 0);
+                    var comp = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(piece)!;
+                    var pieceRing = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(piece)!;
+                    var pathGeometry = comp.CreatePathGeometry(new CompositionPath(GeometrySource.Create(local)));
+                    var white = comp.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
+                    var sprite = comp.CreateSpriteShape(pathGeometry);
+                    sprite.StrokeBrush = white; sprite.StrokeThickness = 8;
+                    pathObjects.Add(pathGeometry); pathObjects.Add(white); pathObjects.Add(sprite);
+                    pieceRing.Shapes.Clear(); pieceRing.Shapes.Add(sprite);
+                    type.GetMethod("UpdateCursorAt")!.Invoke(piece, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                }
+                Pump(900); DwmFlush();
+                IntPtr seamDc = GetDC(IntPtr.Zero);
+                uint left, right, center;
+                try
+                {
+                    left = GetPixel(seamDc, bounds.Left + 158, bounds.Top + 25);
+                    right = GetPixel(seamDc, bounds.Left + 161, bounds.Top + 25);
+                    center = GetPixel(seamDc, bounds.Left + 160, bounds.Top + 100);
+                }
+                finally { ReleaseDC(IntPtr.Zero, seamDc); }
+                if ((left & 0xffffff) < 0xc0c0c0 || (right & 0xffffff) < 0xc0c0c0 || (center & 0xffffff) > 0x202020)
+                    throw new Exception($"Contour across synthetic monitor seam failed: {left:X}/{right:X}/{center:X}.");
+                foreach (var piece in pieces)
+                    textCutout.Invoke(piece, new object?[] { new System.Drawing.Point(bounds.Left + 170, bounds.Top + 25),
+                        new Rectangle(bounds.Left + 130, bounds.Top + 17, 60, 16) });
+                Pump(500); DwmFlush();
+                seamDc = GetDC(IntPtr.Zero);
+                try { left = GetPixel(seamDc, bounds.Left + 158, bounds.Top + 25); right = GetPixel(seamDc, bounds.Left + 161, bounds.Top + 25); }
+                finally { ReleaseDC(IntPtr.Zero, seamDc); }
+                if ((left & 0xffffff) > 0x202020 || (right & 0xffffff) > 0x202020)
+                    throw new Exception($"Contour selection across synthetic monitor seam failed: {left:X}/{right:X}.");
+                Console.WriteLine("PASS: Shared Composition contour and selection span two synthetic monitor windows.");
+            }
+            finally
+            {
+                foreach (var piece in pieces) ((IDisposable)piece).Dispose();
+                for (int i = pathObjects.Count - 1; i >= 0; i--) pathObjects[i].Dispose();
+            }
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
