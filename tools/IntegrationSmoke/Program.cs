@@ -876,7 +876,9 @@ internal static class Program
             Key(0x11, true); Key(0x4c, true); Key(0x4c, false); Key(0x11, false); PumpFor(250);
             for (int i = 0; i < 12; i++) { Key(0x41, true); Key(0x41, false); PumpFor(30); }
             Key(0x24, true); Key(0x24, false); PumpFor(700);
-            if (field.GetValue(window) is not System.Drawing.Point beginning) throw new Exception("Chrome address bar start caret was not detected.");
+            for (int i = 0; i < 30 && field.GetValue(window) == null; i++) PumpFor(100);
+            if (field.GetValue(window) is not System.Drawing.Point beginning)
+                throw new Exception($"Chrome address bar start caret was not detected (foreground={GetForegroundWindow():X}, chrome={process.MainWindowHandle:X}).");
             for (int i = 0; i < 12; i++) { Key(0x27, true); Key(0x27, false); PumpFor(30); }
             PumpFor(800);
             for (int i = 0; i < 20 && Equals(field.GetValue(window), beginning); i++) PumpFor(100);
