@@ -581,6 +581,24 @@ internal static class Program
             if (!any) throw new Exception("Cursor at monitor boundary did not activate tiles on both monitors.");
         }
         Console.WriteLine($"PASS: Tiled cursor updates localized: visible={visibleCount}, masked={activeCount}, empty tiles hidden={skippedCount}; seam activates both.");
+        var textUpdate = scene.GetType().GetMethod("UpdateTextCutout")!;
+        textUpdate.Invoke(scene, new object?[] { new System.Drawing.Point(left.Right + 60, cursorY),
+            new System.Drawing.Rectangle(left.Right - 70, cursorY - 8, 140, 16) });
+        foreach (object backend in windows)
+        {
+            var tiles = (System.Collections.IList)backend.GetType().GetField("_tiles", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            bool any = false;
+            foreach (object tile in tiles)
+            {
+                var t = tile.GetType();
+                var extra = t.GetField("CaretMask")!.GetValue(tile);
+                var visual = (Windows.UI.Composition.SpriteVisual)t.GetField("Visual")!.GetValue(tile)!;
+                if (extra != null && visual.IsVisible && visual.Brush == (Windows.UI.Composition.CompositionBrush)extra.GetType().GetField("Brush")!.GetValue(extra)!) any = true;
+            }
+            if (!any) throw new Exception("Selected text spanning the monitor seam did not activate masks on both windows.");
+        }
+        textUpdate.Invoke(scene, new object?[] { null, null });
+        Console.WriteLine("PASS: Selected text crossing the synthetic monitor seam activates both tiled windows.");
         // Sample actual core pixels across two independent tiled surfaces.
         if (GetCursorPos(out Point saved))
         {
