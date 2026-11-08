@@ -614,6 +614,7 @@ namespace WinRinglight
         private OutlineElement? _wpfOutline;
         private string? _outlineKey;
         private DisplayOutlineLayers.Layers? _outlineLayers;
+        private double _outlineThickness;
 
         private void UpdateOutlineAppearance(double thickness, double kelvin)
         {
@@ -636,16 +637,34 @@ namespace WinRinglight
             double radius = rounded && screens.Length > 0
                 ? Math.Min(screens[0].Bounds.Width, screens[0].Bounds.Height) * 0.22 : 3 * scale;
             string key = $"{pixels:R}/{scale:R}/{rounded}/{radius:R}/" + string.Join(";", regions);
-            if (_outlineKey != key || _outlineLayers == null)
+            bool changed = _outlineKey != key || _outlineLayers == null;
+            var previous = _outlineLayers;
+            bool animate = changed && previous != null && _outlineThickness == pixels;
+            if (changed)
             {
                 _outlineLayers = DisplayOutlineLayers.Create(regions, radius, rounded ? 20 * scale : 0, pixels);
                 _outlineKey = key;
+                _outlineThickness = pixels;
             }
-            _compositionBackend?.SetOutline(_outlineLayers);
+            _compositionBackend?.SetOutlineTransition(_outlineLayers, animate);
             if (_wpfOutline == null) _wpfOutline = new OutlineElement { IsHitTestVisible = false };
             if (!MainGrid.Children.Contains(_wpfOutline)) MainGrid.Children.Add(_wpfOutline);
             _wpfOutline.Visibility = Visibility.Visible;
-            _wpfOutline.Layers = _outlineLayers;
+            if (changed)
+            {
+                _wpfOutline.BeginAnimation(OutlineElement.TransitionProperty, null);
+                _wpfOutline.PreviousLayers = animate ? previous : null;
+                _wpfOutline.Layers = _outlineLayers;
+                if (animate)
+                {
+                    var transition = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(400))
+                        { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut } };
+                    Timeline.SetDesiredFrameRate(transition, 60);
+                    _wpfOutline.BeginAnimation(OutlineElement.TransitionProperty, transition);
+                }
+                else _wpfOutline.Transition = 1;
+            }
+            else _wpfOutline.Layers = _outlineLayers;
             _wpfOutline.Thickness = pixels;
             _wpfOutline.DpiScale = scale;
             _wpfOutline.DisableGlow = DevDisableGlow;

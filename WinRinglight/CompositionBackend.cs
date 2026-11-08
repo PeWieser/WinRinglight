@@ -45,6 +45,9 @@ internal sealed class CompositionBackend : IDisposable
     private readonly List<CompositionColorBrush> _outlineHaloBrushes = new();
     private CompositionColorBrush? _outlineCoreBrush;
     private IntPtr[]? _outlineNativePaths;
+    private readonly List<CompositionObject> _retiredOutlineObjects = new();
+    private readonly List<CompositionShape> _retiredOutlineShapes = new();
+    private DispatcherTimer? _outlineTransitionTimer;
     private bool _directRasterFailed;
     public event Action<string>? DirectRasterFailed;
     private const int RasterPadding = 0;
@@ -394,7 +397,9 @@ internal sealed class CompositionBackend : IDisposable
     // The caller supplies global physical-pixel paths shared by every display.
     // Build replacement resources before changing the visual; a failed build
     // therefore leaves the previous ring intact.
-    public void SetOutline(DisplayOutlineLayers.Layers? layers)
+    public void SetOutline(DisplayOutlineLayers.Layers? layers) => SetOutlineTransition(layers, false);
+
+    public void SetOutlineTransition(DisplayOutlineLayers.Layers? layers, bool animate)
     {
         if (_ring == null || _compositor == null || (_outline == null && layers == null)) return;
         var created = new List<CompositionObject>();
@@ -455,23 +460,87 @@ internal sealed class CompositionBackend : IDisposable
                 coverage.Freeze();
             }
             ScheduleDirectRaster();
+            ClearRetiredOutline();
             if (_outline == null && layers != null)
             {
                 _baseShapes.Clear();
                 foreach (var shape in _ring.Shapes) _baseShapes.Add(shape);
             }
-            _ring.Shapes.Clear();
+            bool transition = animate && _outline != null && layers != null;
+            if (transition)
+            {
+                foreach (var shape in _ring.Shapes) _retiredOutlineShapes.Add(shape);
+                _retiredOutlineObjects.AddRange(_outlineObjects);
+                foreach (var brush in _outlineHaloBrushes) AnimateOutlineColor(brush, false);
+                if (_outlineCoreBrush != null) AnimateOutlineColor(_outlineCoreBrush, false);
+            }
+            else
+            {
+                _ring.Shapes.Clear();
+                for (int i = _outlineObjects.Count - 1; i >= 0; i--) _outlineObjects[i].Dispose();
+            }
             if (layers == null) { foreach (var shape in _baseShapes) _ring.Shapes.Add(shape); _baseShapes.Clear(); }
             else foreach (var shape in shapes) _ring.Shapes.Add(shape);
-            for (int i = _outlineObjects.Count - 1; i >= 0; i--) _outlineObjects[i].Dispose();
             _outlineObjects.Clear(); _outlineObjects.AddRange(created); created.Clear();
             _outlineHaloBrushes.Clear(); _outlineHaloBrushes.AddRange(haloBrushes);
             _outlineCoreBrush = coreBrush;
             ReleaseOutlineNativePaths();
             _outline = layers; _outlineLocal = local; _outlineCoverage = coverage;
-            RefreshTileVisibility();
+            if (transition)
+            {
+                foreach (var brush in _outlineHaloBrushes) AnimateOutlineColor(brush, true);
+                if (_outlineCoreBrush != null) AnimateOutlineColor(_outlineCoreBrush, true);
+                PrepareTilesForAnimation();
+                _outlineTransitionTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(420) };
+                _outlineTransitionTimer.Tick -= FinishOutlineTransition;
+                _outlineTransitionTimer.Tick += FinishOutlineTransition;
+                _outlineTransitionTimer.Start();
+            }
+            else RefreshTileVisibility();
         }
         finally { for (int i = created.Count - 1; i >= 0; i--) created[i].Dispose(); }
+    }
+
+    private void AnimateOutlineColor(CompositionColorBrush brush, bool fadeIn)
+    {
+        if (_compositor == null) return;
+        var target = brush.Color;
+        var transparent = Color.FromArgb(0, target.R, target.G, target.B);
+        using var animation = _compositor.CreateColorKeyFrameAnimation();
+        using var easeIn = QuadraticSegment(true);
+        using var easeOut = QuadraticSegment(false);
+        animation.InsertKeyFrame(0, fadeIn ? transparent : target);
+        byte halfAlpha = (byte)Math.Round(target.A * 0.5);
+        animation.InsertKeyFrame(0.5f, Color.FromArgb(halfAlpha, target.R, target.G, target.B), easeIn);
+        animation.InsertKeyFrame(1, fadeIn ? target : transparent, easeOut);
+        animation.Duration = TimeSpan.FromMilliseconds(400);
+        brush.StartAnimation("Color", animation);
+    }
+
+    private void FinishOutlineTransition(object? sender, EventArgs e)
+    {
+        ClearRetiredOutline();
+        foreach (var brush in _outlineHaloBrushes) brush.StopAnimation("Color");
+        _outlineCoreBrush?.StopAnimation("Color");
+        if (_coreBrush != null) UpdateColorFromBrush();
+        RefreshTileVisibility();
+    }
+
+    private void UpdateColorFromBrush()
+    {
+        if (_coreBrush == null) return;
+        var color = _coreBrush.Color;
+        if (_outlineCoreBrush != null) _outlineCoreBrush.Color = color;
+        foreach (var brush in _outlineHaloBrushes) brush.Color = Color.FromArgb(brush.Color.A, color.R, color.G, color.B);
+    }
+
+    private void ClearRetiredOutline()
+    {
+        _outlineTransitionTimer?.Stop();
+        if (_ring != null) foreach (var shape in _retiredOutlineShapes) _ring.Shapes.Remove(shape);
+        _retiredOutlineShapes.Clear();
+        for (int i = _retiredOutlineObjects.Count - 1; i >= 0; i--) _retiredOutlineObjects[i].Dispose();
+        _retiredOutlineObjects.Clear();
     }
 
     private void ReleaseOutlineNativePaths()
@@ -567,7 +636,7 @@ internal sealed class CompositionBackend : IDisposable
         // Geometry is supplied in physical pixels and must be rebuilt by the
         // scene when thickness or style changes. Restore the safe base path
         // until that replacement is ready.
-        if (_outline != null && (_currentThickness != thickness || _currentRounded != rounded)) SetOutline(null);
+        if (_outline != null && _currentThickness != thickness) SetOutline(null);
         if (_coreBrush != null && _currentThickness == thickness)
         {
             bool changed = _currentRounded != rounded || !_coreBrush.Color.Equals(ToColor(kelvin));
@@ -797,6 +866,8 @@ internal sealed class CompositionBackend : IDisposable
             _tileSettleTimer = null;
             _rasterTimer?.Stop();
             _rasterTimer = null;
+            ClearRetiredOutline();
+            _outlineTransitionTimer = null;
             try { RestoreVectorSurfaces(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
             ReleaseOutlineNativePaths();
             _directRaster?.Dispose(); _directRaster = null;

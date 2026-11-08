@@ -96,10 +96,12 @@ internal sealed class CompositionScene : IDisposable
         _outlineMode = outlineMode;
     }
 
-    public void SetOutline(DisplayOutlineLayers.Layers? outline)
+    public void SetOutline(DisplayOutlineLayers.Layers? outline) => SetOutlineTransition(outline, false);
+
+    public void SetOutlineTransition(DisplayOutlineLayers.Layers? outline, bool animate)
     {
         if (Nullable.Equals(_outline, outline)) return;
-        foreach (var window in _windows) window.SetOutline(outline);
+        foreach (var window in _windows) window.SetOutlineTransition(outline, animate);
         _outline = outline;
     }
 
