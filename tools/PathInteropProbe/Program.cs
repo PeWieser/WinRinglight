@@ -33,15 +33,15 @@ internal static class Program
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var layers = DisplayOutlineLayers.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20, 1, 8);
             var outline = layers.Core;
-            var source = GeometrySource.Create(outline);
+            var source = CompositionGeometryInterop.Create(outline);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
             using var brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
             using var shape = compositor.CreateSpriteShape(geometry);
             shape.StrokeBrush = brush; shape.StrokeThickness = 8;
             ring.Shapes.Clear();
-            using var outerGeometry = compositor.CreatePathGeometry(new CompositionPath(GeometrySource.Create(layers.Outer)));
-            using var innerGeometry = compositor.CreatePathGeometry(new CompositionPath(GeometrySource.Create(layers.Inner)));
+            using var outerGeometry = compositor.CreatePathGeometry(new CompositionPath(CompositionGeometryInterop.Create(layers.Outer)));
+            using var innerGeometry = compositor.CreatePathGeometry(new CompositionPath(CompositionGeometryInterop.Create(layers.Inner)));
             void AddContours(float width, byte opacity)
             {
                 var haloBrush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(opacity, 255, 255, 255));
@@ -113,7 +113,7 @@ internal static class Program
             {
                 // Independent 2x Direct2D path surface, displayed at 1x, uses
                 // the same path data as the Composition prototype, rebuilt for the drawing factory.
-                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => GeometrySource.CreateNativeSet(factory, layers.Core, layers.Outer, layers.Inner));
+                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => CompositionGeometryInterop.CreateNativeSet(factory, layers.Core, layers.Outer, layers.Inner));
                 var ringBrush = (CompositionSurfaceBrush)type.GetField("_ringBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
                 ringBrush.Surface = raster.Surface;
                 ringBrush.Stretch = CompositionStretch.Fill;
@@ -152,7 +152,7 @@ internal static class Program
                     local.Transform = new TranslateTransform(-part * 160, 0);
                     var comp = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(piece)!;
                     var pieceRing = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(piece)!;
-                    var pathGeometry = comp.CreatePathGeometry(new CompositionPath(GeometrySource.Create(local)));
+                    var pathGeometry = comp.CreatePathGeometry(new CompositionPath(CompositionGeometryInterop.Create(local)));
                     var white = comp.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
                     var sprite = comp.CreateSpriteShape(pathGeometry);
                     sprite.StrokeBrush = white; sprite.StrokeThickness = 8;

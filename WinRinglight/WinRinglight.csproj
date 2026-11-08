@@ -17,6 +17,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+	    <_Parameter1>PathInteropProbe</_Parameter1>
+	  </AssemblyAttribute>
 	  <Resource Include="icon.ico" />
 	</ItemGroup>
 

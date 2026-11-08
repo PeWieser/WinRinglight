@@ -8,9 +8,11 @@ using System.Windows.Media;
 using Windows.Graphics;
 using WinRT;
 
-// Isolated experiment: a manually implemented WinRT IGeometrySource2D with
-// the documented native IGeometrySource2DInterop interface. Not app code.
-internal static unsafe class GeometrySource
+// Bridge an in-box Direct2D path to Windows Composition without Win2D.
+// The probe exercises this class in a separate process before it is used.
+namespace WinRinglight;
+
+internal static unsafe class CompositionGeometryInterop
 {
     private static readonly Guid IUnknownId = new("00000000-0000-0000-C000-000000000046");
     private static readonly Guid IInspectableId = new("AF86E2E0-B12D-4C6A-9C5A-D7AA65101E90");
