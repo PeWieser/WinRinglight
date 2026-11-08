@@ -168,6 +168,17 @@ internal static class Program
         var disappearing = InsetDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 10, 100) }, 0, 6);
         if (!disappearing.IsEmpty()) throw new Exception("Too-narrow inset region should disappear rather than invert.");
         Console.WriteLine("Inset outline prototype: square, hole and narrow-region checks passed.");
+        var layers = DisplayOutlineLayers.Create(new[] { new System.Drawing.Rectangle(0, 0, 320, 200) }, 44, 20, 30);
+        static void AssertOffset(string name, Geometry g, double left, double top, double right, double bottom)
+        {
+            var b = g.Bounds;
+            if (Math.Abs(b.Left - left) > .5 || Math.Abs(b.Top - top) > .5 || Math.Abs(b.Right - right) > .5 || Math.Abs(b.Bottom - bottom) > .5)
+                throw new Exception($"{name} display outline bounds incorrect: {b}.");
+        }
+        AssertOffset("outer", layers.Outer, 20, 20, 300, 180);
+        AssertOffset("core", layers.Core, 35, 35, 285, 165);
+        AssertOffset("inner", layers.Inner, 50, 50, 270, 150);
+        Console.WriteLine("Display core and glow outline geometry bounds match the existing ring.");
 
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
