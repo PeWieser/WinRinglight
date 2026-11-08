@@ -17,7 +17,7 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
     private CompositionGraphicsDevice? _device;
     public CompositionDrawingSurface? Surface { get; private set; }
 
-    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale, bool coreOnly = false)
+    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale, bool coreOnly = false, IntPtr pathGeometry = default)
     {
         try
         {
@@ -45,12 +45,12 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
             finally { Marshal.Release(unk); }
             Surface = _device!.CreateDrawingSurface(new Windows.Foundation.Size(width * scale, height * scale),
                 DirectXPixelFormat.B8G8R8A8UIntNormalized, DirectXAlphaMode.Premultiplied);
-            Draw(scale, coreOnly);
+            Draw(scale, coreOnly, pathGeometry);
         }
         catch { Dispose(); throw; }
     }
 
-    private void Draw(int scale, bool coreOnly)
+    private void Draw(int scale, bool coreOnly, IntPtr pathGeometry)
     {
         IntPtr unk = MarshalInspectable<CompositionDrawingSurface>.FromManaged(Surface!);
         try
@@ -70,6 +70,17 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                     var transform = (delegate* unmanaged[Stdcall]<IntPtr, Matrix*, void>)vt[30];
                     ColorF transparent = default; clear(dc, &transparent);
                     Matrix matrix = new(scale, 0, 0, scale, offset.X, offset.Y); transform(dc, &matrix);
+                    if (pathGeometry != IntPtr.Zero)
+                    {
+                        var create = (delegate* unmanaged[Stdcall]<IntPtr, ColorF*, IntPtr, IntPtr*, int>)vt[8];
+                        var draw = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, float, IntPtr, void>)vt[22];
+                        ColorF white = new(1, 1, 1, 1); IntPtr brush = IntPtr.Zero;
+                        Marshal.ThrowExceptionForHR(create(dc, &white, IntPtr.Zero, &brush));
+                        try { draw(dc, pathGeometry, brush, 8, IntPtr.Zero); }
+                        finally { if (brush != IntPtr.Zero) Marshal.Release(brush); }
+                    }
+                    else
+                    {
                     // Same size and colors as IntegrationSmoke's 320x200 WPF reference.
                     const float thickness = 30, radius = 44, blur = 12;
                     if (!coreOnly)
@@ -88,6 +99,7 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                     }
                     }
                     Stroke(dc, new RoundedRect(35, 35, 285, 165, radius), thickness, 1);
+                    }
                 }
                 finally { if (dc != IntPtr.Zero) Marshal.Release(dc); Marshal.ThrowExceptionForHR(end(interop)); }
             }

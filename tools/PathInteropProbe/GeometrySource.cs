@@ -99,8 +99,9 @@ internal static unsafe class GeometrySource
     private static int TryGetGeometry(IntPtr self, IntPtr factory, IntPtr* result)
     { if (result == null) return unchecked((int)0x80004003); *result = IntPtr.Zero; return unchecked((int)0x80004001); }
 
-    public static IGeometrySource2D Create(Geometry source)
+    public static IGeometrySource2D Create(Geometry source, out IntPtr nativeGeometry)
     {
+        nativeGeometry = IntPtr.Zero;
         var flattened = source.GetFlattenedPathGeometry(0.05, ToleranceType.Absolute);
         var loops = new List<Vector2[]>();
         foreach (var figure in flattened.Figures)
@@ -153,7 +154,13 @@ internal static unsafe class GeometrySource
             instance->References = 1;
             instance->Geometry = geometry;
             geometry = IntPtr.Zero;
-            try { return MarshalInterface<IGeometrySource2D>.FromAbi((IntPtr)instance); }
+            try
+            {
+                var result = MarshalInterface<IGeometrySource2D>.FromAbi((IntPtr)instance);
+                Marshal.AddRef(instance->Geometry);
+                nativeGeometry = instance->Geometry;
+                return result;
+            }
             finally { Marshal.Release((IntPtr)instance); }
         }
         finally { if (geometry != IntPtr.Zero) Marshal.Release(geometry); Marshal.Release(factory); }

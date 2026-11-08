@@ -30,7 +30,7 @@ internal static class Program
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var outline = RoundedDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20);
-            var source = GeometrySource.Create(outline);
+            var source = GeometrySource.Create(outline, out IntPtr nativeGeometry);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
             using var brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
@@ -68,6 +68,30 @@ internal static class Program
             finally { ReleaseDC(IntPtr.Zero, dc); }
             if ((restored & 0xffffff) < 0xc0c0c0) throw new Exception($"Composition path did not restore after cursor moved: {restored:X}.");
             Console.WriteLine("PASS: Composition path respects cursor mask and restores after movement.");
+            try
+            {
+                // Independent 2x Direct2D path surface, displayed at 1x, uses
+                // the exact same geometry object as the Composition prototype.
+                using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathGeometry: nativeGeometry);
+                using var surfaceBrush = compositor.CreateSurfaceBrush(raster.Surface);
+                surfaceBrush.Stretch = CompositionStretch.Fill;
+                surfaceBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
+                var result = (SpriteVisual)type.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                result.Brush = surfaceBrush;
+                Pump(800); DwmFlush();
+                dc = GetDC(IntPtr.Zero);
+                try
+                {
+                    uint edge = GetPixel(dc, bounds.Left + 50, bounds.Top + 60);
+                    uint voidPixel = GetPixel(dc, bounds.Left + 100, bounds.Top + 100);
+                    uint roundedCorner = GetPixel(dc, bounds.Left + 100, bounds.Top + 20);
+                    if ((edge & 0xffffff) < 0xc0c0c0 || (voidPixel & 0xffffff) > 0x202020 || (roundedCorner & 0xffffff) > 0x202020)
+                        throw new Exception($"Direct2D 2x path pixels invalid: edge={edge:X}, inner={voidPixel:X}, corner={roundedCorner:X}.");
+                    Console.WriteLine("PASS: Direct2D 2x surface renders the same rounded union path without inner edge.");
+                }
+                finally { ReleaseDC(IntPtr.Zero, dc); }
+            }
+            finally { Marshal.Release(nativeGeometry); }
             ring.Shapes.Clear();
             return 0;
         }
