@@ -53,4 +53,79 @@ public static class DisplayOutline
         }
         return result.ToArray();
     }
+    /// <summary>Trace directed boundary loops; monitor material stays on the right.
+    /// At corner-only contacts, prefer a right turn so distinct regions do not
+    /// become one self-intersecting path. Holes have the opposite winding.</summary>
+    public static Point[][] BuildLoops(IEnumerable<Rectangle> rectangles)
+    {
+        var edges = Build(rectangles);
+        var endpoints = new HashSet<Point>();
+        foreach (var edge in edges)
+        {
+            if (edge.Side is Side.Top or Side.Bottom)
+            {
+                endpoints.Add(new Point(edge.Start, edge.Fixed));
+                endpoints.Add(new Point(edge.End, edge.Fixed));
+            }
+            else
+            {
+                endpoints.Add(new Point(edge.Fixed, edge.Start));
+                endpoints.Add(new Point(edge.Fixed, edge.End));
+            }
+        }
+        var segments = new List<(Point From, Point To, int Direction)>();
+        foreach (var edge in edges)
+        {
+            bool horizontal = edge.Side is Side.Top or Side.Bottom;
+            var cuts = endpoints.Where(p => horizontal ? p.Y == edge.Fixed && p.X >= edge.Start && p.X <= edge.End
+                                                       : p.X == edge.Fixed && p.Y >= edge.Start && p.Y <= edge.End)
+                .Select(p => horizontal ? p.X : p.Y).Distinct().Order().ToArray();
+            bool forward = edge.Side is Side.Top or Side.Right;
+            int direction = edge.Side switch { Side.Top => 0, Side.Right => 1, Side.Bottom => 2, _ => 3 };
+            for (int i = 0; i + 1 < cuts.Length; i++)
+            {
+                var a = horizontal ? new Point(cuts[i], edge.Fixed) : new Point(edge.Fixed, cuts[i]);
+                var b = horizontal ? new Point(cuts[i + 1], edge.Fixed) : new Point(edge.Fixed, cuts[i + 1]);
+                segments.Add(forward ? (a, b, direction) : (b, a, direction));
+            }
+        }
+        var byStart = new Dictionary<Point, List<int>>();
+        for (int i = 0; i < segments.Count; i++)
+        {
+            var start = segments[i].From;
+            if (!byStart.TryGetValue(start, out var outgoing)) byStart[start] = outgoing = new List<int>();
+            outgoing.Add(i);
+        }
+        var used = new bool[segments.Count];
+        var loops = new List<Point[]>();
+        for (int first = 0; first < segments.Count; first++)
+        {
+            if (used[first]) continue;
+            var points = new List<Point>();
+            int current = first;
+            Point origin = segments[first].From;
+            while (true)
+            {
+                if (used[current]) throw new InvalidOperationException("Boundary traversal reused an edge.");
+                used[current] = true;
+                var segment = segments[current];
+                points.Add(segment.From);
+                if (segment.To == origin) break;
+                if (!byStart.TryGetValue(segment.To, out var outgoing)) throw new InvalidOperationException("Open display boundary.");
+                int next = -1, best = int.MaxValue;
+                foreach (int candidate in outgoing)
+                {
+                    if (used[candidate]) continue;
+                    int turn = (segments[candidate].Direction - segment.Direction + 4) % 4;
+                    int rank = turn switch { 1 => 0, 0 => 1, 3 => 2, _ => 3 };
+                    if (rank < best) { best = rank; next = candidate; }
+                }
+                if (next < 0) throw new InvalidOperationException("Display boundary did not close.");
+                current = next;
+            }
+            loops.Add(points.ToArray());
+        }
+        return loops.ToArray();
+    }
+
 }

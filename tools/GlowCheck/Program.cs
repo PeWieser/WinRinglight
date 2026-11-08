@@ -77,6 +77,8 @@ internal static class Program
         CheckOutline("overlap", new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(50, 0, 100, 100) },
             new(T, 0, 0, 150), new(B, 100, 0, 150), new(L, 0, 0, 100), new(R, 150, 0, 100));
         Console.WriteLine("Display union outlines: stacked, cross, gap and overlap checks passed.");
+        var touching = DisplayOutline.BuildLoops(new[] { new System.Drawing.Rectangle(0, 0, 2, 2), new System.Drawing.Rectangle(2, 2, 2, 2) });
+        if (touching.Length != 2) throw new Exception("Corner-touching screens must yield distinct boundary loops.");
         var random = new Random(9173);
         for (int n = 0; n < 200; n++)
         {
@@ -97,6 +99,29 @@ internal static class Program
                 for (int p = edge.Start; p < edge.End; p++)
                     if (!actualUnits.Add(edge with { Start = p, End = p + 1 })) throw new Exception("Duplicate union outline edge.");
             if (!expectedUnits.SetEquals(actualUnits)) throw new Exception($"Randomized display outline mismatch (case {n}).");
+            var tracedUnits = new HashSet<DisplayOutline.Edge>();
+            foreach (var loop in DisplayOutline.BuildLoops(screens))
+            {
+                if (loop.Length < 4) throw new Exception("Display outline loop is too short.");
+                for (int i = 0; i < loop.Length; i++)
+                {
+                    var a = loop[i]; var b = loop[(i + 1) % loop.Length];
+                    if ((a.X == b.X) == (a.Y == b.Y)) throw new Exception("Invalid outline loop segment.");
+                    if (a.Y == b.Y)
+                    {
+                        var side = b.X > a.X ? T : B;
+                        for (int x = Math.Min(a.X, b.X); x < Math.Max(a.X, b.X); x++)
+                            if (!tracedUnits.Add(new(side, a.Y, x, x + 1))) throw new Exception("Duplicate traced horizontal edge.");
+                    }
+                    else
+                    {
+                        var side = b.Y > a.Y ? R : L;
+                        for (int y = Math.Min(a.Y, b.Y); y < Math.Max(a.Y, b.Y); y++)
+                            if (!tracedUnits.Add(new(side, a.X, y, y + 1))) throw new Exception("Duplicate traced vertical edge.");
+                    }
+                }
+            }
+            if (!expectedUnits.SetEquals(tracedUnits)) throw new Exception($"Randomized display boundary loop mismatch (case {n}).");
         }
         Console.WriteLine("Display union outline: 200 randomized layouts match independent cell boundaries.");
 
