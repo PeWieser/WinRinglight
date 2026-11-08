@@ -226,6 +226,16 @@ internal static class Program
                     Pump(800);
                     var retired = (System.Collections.ICollection)type.GetField("_retiredOutlineObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)!;
                     if (retired.Count != 0) throw new Exception("Outline transition resources were not released.");
+                    if (direct)
+                    {
+                        ((IDisposable)type.GetField("_directRaster", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)!).Dispose();
+                        type.GetMethod("SetRing")!.Invoke(piece, new object[] { 8f, true, 4500d, false });
+                        Pump(800);
+                        if (!(bool)type.GetField("_directRasterFailed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)! ||
+                            !(bool)type.GetProperty("HasOutline")!.GetValue(piece)! ||
+                            type.GetField("_outlineNativePaths", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece) != null)
+                            throw new Exception("Failed outline raster did not release paths and retain its vector fallback.");
+                    }
                     type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { null });
                     Pump(800);
                     if (type.GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece) != null)
@@ -233,7 +243,7 @@ internal static class Program
                 }
                 finally { ((IDisposable)piece).Dispose(); }
             }
-            Console.WriteLine("PASS: Composition backend outline pixels, transitions and base restoration in tiled/whole vector/2x modes.");
+            Console.WriteLine("PASS: Composition backend outline pixels, transitions, simulated raster failure and base restoration in tiled/whole vector/2x modes.");
             foreach (bool direct in new[] { false, true })
             {
                 var pair = new List<object>();

@@ -191,6 +191,10 @@ internal sealed class CompositionBackend : IDisposable
                     {
                         System.Diagnostics.Trace.WriteLine("Direct2D raster failed; retaining Composition vector renderer: " + ex);
                         RestoreVectorSurfaces();
+                        ReleaseOutlineNativePaths();
+                        try { _directRaster?.Dispose(); }
+                        catch (Exception cleanup) { System.Diagnostics.Trace.WriteLine("Direct2D cleanup: " + cleanup); }
+                        _directRaster = null;
                         _directRasterFailed = true;
                         DirectRasterFailed?.Invoke(ex.Message);
                     }
