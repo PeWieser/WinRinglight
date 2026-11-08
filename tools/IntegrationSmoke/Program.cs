@@ -1206,8 +1206,8 @@ internal static class Program
                         return;
                     }
                     long diff = 0; int samples = 0; int sampleIndex = 0;
-                    for (int y = 12; y < 110; y += 2)
-                        for (int x = 12; x < 110; x += 2)
+                    for (int y = 12; y < 110; y += 4)
+                        for (int x = 12; x < 110; x += 4)
                         {
                             int i = (y * width + x) * 4;
                             uint observed = GetPixel(dc, bounds.Left + x, bounds.Top + y);
@@ -1234,7 +1234,7 @@ internal static class Program
                         for (int y = 12; y < 110; y += 4)
                             for (int x = 12; x < 110; x += 4)
                             {
-                                uint before = firstPixels[((y - 12) / 2) * 49 + ((x - 12) / 2)];
+                                uint before = firstPixels[((y - 12) / 4) * 25 + ((x - 12) / 4)];
                                 uint after = GetPixel(maskDc, bounds.Left + x, bounds.Top + y);
                                 for (int shift = 0; shift <= 16; shift += 8)
                                     maxDelta = Math.Max(maxDelta, Math.Abs((int)((before >> shift) & 255) - (int)((after >> shift) & 255)));
