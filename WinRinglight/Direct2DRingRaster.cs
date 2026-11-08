@@ -85,13 +85,11 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
                         {
                             float fraction = i / 12f;
                             float alpha = (float)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75)) / 255f;
-                            Stroke(dc, outer, 2 * blur * fraction, alpha, color);
-                            Stroke(dc, inner, 2 * blur * fraction, alpha, color);
+                            StrokePair(dc, outer, inner, 2 * blur * fraction, alpha, color);
                         }
                         foreach (var edge in new[] { (width: 3f, alpha: 30), (width: 2f, alpha: 65), (width: 1f, alpha: 110) })
                         {
-                            Stroke(dc, outer, edge.width * dpi, edge.alpha / 255f, color);
-                            Stroke(dc, inner, edge.width * dpi, edge.alpha / 255f, color);
+                            StrokePair(dc, outer, inner, edge.width * dpi, edge.alpha / 255f, color);
                         }
                         Stroke(dc, new RoundedRect(left, top, right, bottom, radius), thickness, 1, color);
                     }
@@ -103,6 +101,20 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
             return surface;
         }
         catch { surface.Dispose(); throw; }
+    }
+
+    // Both contours have the same color and opacity. Reuse one device brush
+    // for the pair; this changes neither geometry nor draw order.
+    private static void StrokePair(IntPtr dc, RoundedRect outer, RoundedRect inner, float width, float alpha, Windows.UI.Color ringColor)
+    {
+        var vt = *(IntPtr**)dc;
+        var create = (delegate* unmanaged[Stdcall]<IntPtr, ColorF*, IntPtr, IntPtr*, int>)vt[8];
+        var draw = (delegate* unmanaged[Stdcall]<IntPtr, RoundedRect*, IntPtr, float, IntPtr, void>)vt[18];
+        ColorF color = new(ringColor.R / 255f, ringColor.G / 255f, ringColor.B / 255f, alpha);
+        IntPtr brush = IntPtr.Zero;
+        Marshal.ThrowExceptionForHR(create(dc, &color, IntPtr.Zero, &brush));
+        try { draw(dc, &outer, brush, width, IntPtr.Zero); draw(dc, &inner, brush, width, IntPtr.Zero); }
+        finally { if (brush != IntPtr.Zero) Marshal.Release(brush); }
     }
 
     private static void Stroke(IntPtr dc, RoundedRect rect, float width, float alpha, Windows.UI.Color ringColor)
