@@ -1176,6 +1176,58 @@ internal static class Program
                 finally { ((IDisposable)d2dBackend).Dispose(); }
             }
             Console.WriteLine($"PARTIAL: Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
+            // A separate geometry reference avoids treating WPF's differing glow/edge
+            // contours as ground truth. Integrate ideal pixel coverage on a 32x32 grid.
+            var idealEdges = new System.Collections.Generic.List<(int X, int Y, double Coverage)>();
+            for (int y = 12; y < 110; y++)
+                for (int x = 12; x < 110; x++)
+                {
+                    int covered = 0;
+                    for (int sy = 0; sy < 32; sy++)
+                        for (int sx = 0; sx < 32; sx++)
+                        {
+                            double qx = Math.Abs(x + (sx + .5) / 32 - 160) - 81;
+                            double qy = Math.Abs(y + (sy + .5) / 32 - 100) - 21;
+                            double distance = Math.Min(Math.Max(qx, qy), 0) + Math.Sqrt(Math.Max(qx, 0) * Math.Max(qx, 0) + Math.Max(qy, 0) * Math.Max(qy, 0)) - 44;
+                            if (Math.Abs(distance) <= 15) covered++;
+                        }
+                    if (covered > 0 && covered < 1024) idealEdges.Add((x, y, covered / 1024d));
+                }
+            var idealError = new double[2];
+            for (int scale = 1; scale <= 2; scale++)
+            {
+                object probe = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
+                    false, true, 2f, null, false, false, 1f, false })!;
+                try
+                {
+                    var compositor = (Windows.UI.Composition.Compositor)backendType.GetField("_compositor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!;
+                    var result = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!;
+                    using var surface = new Direct2DRasterProbe(compositor, width, height, scale, coreOnly: true);
+                    using var brush = compositor.CreateSurfaceBrush(surface.Surface);
+                    brush.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
+                    brush.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
+                    result.Brush = brush;
+                    Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
+                    IntPtr dc = GetDC(IntPtr.Zero);
+                    try
+                    {
+                        double sum = 0;
+                        foreach (var edge in idealEdges)
+                        {
+                            uint observed = GetPixel(dc, bounds.Left + edge.X, bounds.Top + edge.Y);
+                            sum += Math.Abs((observed & 255) - 246 * edge.Coverage);
+                            sum += Math.Abs(((observed >> 8) & 255) - 203 * edge.Coverage);
+                            sum += Math.Abs(((observed >> 16) & 255) - 141 * edge.Coverage);
+                        }
+                        idealError[scale - 1] = sum / (idealEdges.Count * 3);
+                    }
+                    finally { ReleaseDC(IntPtr.Zero, dc); }
+                }
+                finally { ((IDisposable)probe).Dispose(); }
+            }
+            if (idealEdges.Count < 20) throw new Exception("Analytic raster reference has too few edge samples.");
+            Console.WriteLine($"PARTIAL: Direct2D core-only geometric coverage comparison: 1x={idealError[0]:F4}, 2x={idealError[1]:F4}, fractional edge pixels={idealEdges.Count}; lower is better.");
+
             Console.WriteLine(errors[1] < errors[0] && changedPixels > 0
                 ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}."
                 : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}; improvement not established.");

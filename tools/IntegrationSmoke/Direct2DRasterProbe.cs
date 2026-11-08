@@ -17,7 +17,7 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
     private CompositionGraphicsDevice? _device;
     public CompositionDrawingSurface? Surface { get; private set; }
 
-    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale)
+    public Direct2DRasterProbe(Compositor compositor, int width, int height, int scale, bool coreOnly = false)
     {
         try
         {
@@ -45,12 +45,12 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
             finally { Marshal.Release(unk); }
             Surface = _device!.CreateDrawingSurface(new Windows.Foundation.Size(width * scale, height * scale),
                 DirectXPixelFormat.B8G8R8A8UIntNormalized, DirectXAlphaMode.Premultiplied);
-            Draw(scale);
+            Draw(scale, coreOnly);
         }
         catch { Dispose(); throw; }
     }
 
-    private void Draw(int scale)
+    private void Draw(int scale, bool coreOnly)
     {
         IntPtr unk = MarshalInspectable<CompositionDrawingSurface>.FromManaged(Surface!);
         try
@@ -72,6 +72,8 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                     Matrix matrix = new(scale, 0, 0, scale, offset.X, offset.Y); transform(dc, &matrix);
                     // Same size and colors as IntegrationSmoke's 320x200 WPF reference.
                     const float thickness = 30, radius = 44, blur = 12;
+                    if (!coreOnly)
+                    {
                     for (int i = 12; i >= 1; i--)
                     {
                         float fraction = i / 12f;
@@ -83,6 +85,7 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                     {
                         Stroke(dc, new RoundedRect(20, 20, 300, 180, radius + 15), edge.width, edge.alpha / 255f);
                         Stroke(dc, new RoundedRect(50, 50, 270, 150, radius - 15), edge.width, edge.alpha / 255f);
+                    }
                     }
                     Stroke(dc, new RoundedRect(35, 35, 285, 165, radius), thickness, 1);
                 }
