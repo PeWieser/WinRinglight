@@ -217,6 +217,15 @@ internal static class Program
                     static int Brightness(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
                     if (Brightness(outer) < 400 || Brightness(inner) > 60)
                         throw new Exception($"Backend outline pixel mismatch (tiled={tiled}, direct={direct}): {outer:X}/{inner:X}.");
+                    var shifted = DisplayOutlineLayers.Create(new[] { new Rectangle(100, 30, 120, 150), new Rectangle(20, 70, 280, 70) }, 20, 1, 8);
+                    var shiftedGlobal = new DisplayOutlineLayers.Layers(Global(shifted.Core), Global(shifted.Outer), Global(shifted.Inner));
+                    type.GetMethod("SetOutlineTransition")!.Invoke(piece, new object?[] { shiftedGlobal, true });
+                    var animatedBrush = (CompositionColorBrush)type.GetField("_outlineCoreBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)!;
+                    if (animatedBrush.TryGetAnimationController("Color") == null)
+                        throw new Exception("Outline crossfade animation was not started.");
+                    Pump(800);
+                    var retired = (System.Collections.ICollection)type.GetField("_retiredOutlineObjects", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)!;
+                    if (retired.Count != 0) throw new Exception("Outline transition resources were not released.");
                     type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { null });
                     Pump(800);
                     if (type.GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece) != null)
@@ -224,7 +233,40 @@ internal static class Program
                 }
                 finally { ((IDisposable)piece).Dispose(); }
             }
-            Console.WriteLine("PASS: Composition backend opt-in outline pixels and base restoration in tiled/whole vector/2x modes.");
+            Console.WriteLine("PASS: Composition backend outline pixels, transitions and base restoration in tiled/whole vector/2x modes.");
+            foreach (bool direct in new[] { false, true })
+            {
+                var pair = new List<object>();
+                try
+                {
+                    for (int part = 0; part < 2; part++)
+                    {
+                        var viewport = new Rectangle(bounds.Left + part * 160, bounds.Top, 160, 200);
+                        var piece = Activator.CreateInstance(type, new object?[] { viewport, bounds, 8f, true, 4000d,
+                            false, true, 25f, 1f, false, false, 1f, true, direct })!;
+                        pair.Add(piece);
+                        type.GetMethod("UpdateCursorAt")!.Invoke(piece, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                        type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { globalLayers });
+                    }
+                    Pump(850); DwmFlush();
+                    IntPtr seamDc = GetDC(IntPtr.Zero);
+                    uint left, right, middle;
+                    try { left = GetPixel(seamDc, bounds.Left + 158, bounds.Top + 25); right = GetPixel(seamDc, bounds.Left + 161, bounds.Top + 25); middle = GetPixel(seamDc, bounds.Left + 160, bounds.Top + 100); }
+                    finally { ReleaseDC(IntPtr.Zero, seamDc); }
+                    static int SumColor(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
+                    if (SumColor(left) < 400 || SumColor(right) < 400 || SumColor(middle) > 60)
+                        throw new Exception($"Backend contour seam failed (2x={direct}): {left:X}/{right:X}/{middle:X}.");
+                    foreach (var piece in pair) textCutout.Invoke(piece, new object?[] { new System.Drawing.Point(bounds.Left + 170, bounds.Top + 25),
+                        new Rectangle(bounds.Left + 130, bounds.Top + 17, 60, 16) });
+                    Pump(400); DwmFlush();
+                    seamDc = GetDC(IntPtr.Zero);
+                    try { left = GetPixel(seamDc, bounds.Left + 158, bounds.Top + 25); right = GetPixel(seamDc, bounds.Left + 161, bounds.Top + 25); }
+                    finally { ReleaseDC(IntPtr.Zero, seamDc); }
+                    if (SumColor(left) > 60 || SumColor(right) > 60) throw new Exception($"Backend contour selection seam failed (2x={direct}): {left:X}/{right:X}.");
+                }
+                finally { foreach (var piece in pair) ((IDisposable)piece).Dispose(); }
+            }
+            Console.WriteLine("PASS: Production backend contour and selection cross two tiled HWNDs in vector and 2x modes.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
