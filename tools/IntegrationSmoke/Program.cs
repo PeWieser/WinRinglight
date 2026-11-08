@@ -79,6 +79,7 @@ internal static class Program
             Config.Current.SelectedMonitors.Clear();
             Config.Current.SelectedMonitors.Add(0);
             Config.Current.IsSpanned = false;
+            Config.Current.SpannedDisplayOutline = false;
             Config.Current.HideFromCapture = false;
             Config.Current.AutoWebcam = false;
             window.Show();
@@ -269,6 +270,43 @@ internal static class Program
             if (ReferenceEquals(sourceBefore, monitorItems.ItemsSource) || monitorItems.Items.Count != System.Windows.Forms.Screen.AllScreens.Length || Config.Current.SelectedMonitors.Count != selectionCount)
                 throw new Exception("Open settings did not refresh monitors or changed the saved selection.");
             Console.WriteLine("PASS: Open settings refreshes monitor list on a display event without changing selection.");
+            var span = (CheckBox)settings.FindName("ChkSpanAll");
+            var outline = (CheckBox)settings.FindName("ChkDisplayOutline");
+            if (outline.IsEnabled || Config.Current.SpannedDisplayOutline) throw new Exception("Outline must be disabled and off by default.");
+            span.IsChecked = true;
+            if (!outline.IsEnabled) throw new Exception("Outline option did not become available in spanning mode.");
+            outline.IsChecked = true;
+            PumpFor(600);
+            using (var saved = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(configPath)))
+                if (!Config.Current.SpannedDisplayOutline || !saved.RootElement.GetProperty("SpannedDisplayOutline").GetBoolean())
+                    throw new Exception("Outline option was not persisted.");
+            if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Spanned outline not installed in Composition: " + window.DevCompositionStatus);
+            var outlineBefore = GetFirstBackend(window).GetType().GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window));
+            window.ApplySettingsLive(1, Config.Current.Thickness, 4500);
+            var outlineAfter = GetFirstBackend(window).GetType().GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window));
+            if (!Equals(outlineBefore, outlineAfter)) throw new Exception("Color change rebuilt outline geometry.");
+            style.SelectedIndex = 1; PumpFor(500);
+            if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Style change lost the outline.");
+            style.SelectedIndex = 0; PumpFor(500);
+            quality.IsChecked = true; PumpFor(700);
+            if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Outline 2x raster failed.");
+            quality.IsChecked = false;
+            window.SetCompositionExperiment(false); PumpFor(500);
+            var fallbackOutline = typeof(MainWindow).GetField("_wpfOutline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window) as FrameworkElement;
+            if (fallbackOutline == null || fallbackOutline.Visibility != Visibility.Visible)
+                throw new Exception("WPF fallback did not show the selected outline.");
+            window.SetCompositionExperiment(true); PumpFor(500);
+            if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Composition did not restore the outline after fallback.");
+            outline.IsChecked = false;
+            if (Config.Current.SpannedDisplayOutline || (bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Base representation did not restore after disabling outline.");
+            span.IsChecked = false;
+            if (outline.IsEnabled) throw new Exception("Outline control should be disabled outside spanning mode.");
+            Console.WriteLine("PASS: Persisted spanning outline, color reuse, style, 2x, WPF fallback and return to base mode.");
             Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor/caret FPS and style changes.");
         }
         finally { settings.Close(); }

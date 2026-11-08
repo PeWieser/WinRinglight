@@ -786,7 +786,7 @@ namespace WinRinglight
             var layout = CompositionLayout.Build(displays, Config.Current.IsSpanned, Config.Current.SelectedMonitors, fullscreen);
             var primary = System.Windows.Forms.Screen.PrimaryScreen;
             float radius = (float)((primary?.Bounds.Height ?? 0) * Config.CursorCutoutRadiusPercent);
-            _compositionBackend.Configure(layout, radius, (float)Config.Current.Thickness,
+            _compositionBackend.ConfigureOutline(layout, radius, (float)Config.Current.Thickness,
                 Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn,
                 Config.Current.IsSpanned && Config.Current.SpannedDisplayOutline);
             UpdateOutlineAppearance(Config.Current.Thickness, _displayedTemperature);

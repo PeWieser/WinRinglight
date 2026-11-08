@@ -25,7 +25,11 @@ internal sealed class CompositionScene : IDisposable
     public event Action<string>? RasterFailed;
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
-        double kelvin, bool excludeCapture, bool visible, bool outlineMode = false)
+        double kelvin, bool excludeCapture, bool visible) =>
+        ConfigureOutline(layout, cursorRadius, thickness, rounded, kelvin, excludeCapture, visible, false);
+
+    public void ConfigureOutline(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
+        double kelvin, bool excludeCapture, bool visible, bool outlineMode)
     {
         bool sharedGeometry = layout.Length > 1;
         for (int i = 1; i < layout.Length; i++) sharedGeometry &= layout[i].Ring == layout[0].Ring;
