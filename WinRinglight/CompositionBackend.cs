@@ -47,6 +47,7 @@ internal sealed class CompositionBackend : IDisposable
     private ExtraMask? _caretMask;
     private System.Drawing.Point? _caret;
     private System.Drawing.Rectangle? _selection;
+    private TextCutoutEllipse? _textEllipse;
     private CompositionSurfaceBrush? _ringBrush;
     private CompositionMaskBrush? _maskedBrush;
     private bool _maskApplied;
@@ -287,7 +288,7 @@ internal sealed class CompositionBackend : IDisposable
         if (mouse) tile.Gradient.EllipseCenter = new Vector2(x - tile.Bounds.Left, y - tile.Bounds.Top);
         tile.MaskApplied = mouse;
         CompositionBrush source = mouse ? tile.MaskBrush : tile.RingBrush;
-        if (GetTextEllipse() is TextCutoutEllipse ellipse && ellipse.Intersects(tile.Bounds))
+        if (_textEllipse is TextCutoutEllipse ellipse && ellipse.Intersects(tile.Bounds))
         {
             tile.CaretMask ??= CreateCaretMask(new Vector2(tile.Bounds.Width, tile.Bounds.Height));
             SetTextGradient(tile.CaretMask.Gradient, ellipse, tile.Bounds.Left, tile.Bounds.Top);
@@ -303,10 +304,11 @@ internal sealed class CompositionBackend : IDisposable
     {
         if (_caret == caret && _selection == selection) return;
         _caret = caret; _selection = selection;
+        _textEllipse = BuildTextEllipse();
         ApplyCursor();
     }
 
-    private TextCutoutEllipse? GetTextEllipse()
+    private TextCutoutEllipse? BuildTextEllipse()
     {
         if (_caret is not System.Drawing.Point p) return null;
         var r = _selection.GetValueOrDefault();
@@ -531,7 +533,7 @@ internal sealed class CompositionBackend : IDisposable
         if (mouse) _gradient.EllipseCenter = new Vector2(_lastX - _left, _lastY - _top);
         _maskApplied = mouse;
         CompositionBrush source = mouse ? _maskedBrush : _ringBrush;
-        if (GetTextEllipse() is TextCutoutEllipse ellipse && ellipse.Intersects(bounds))
+        if (_textEllipse is TextCutoutEllipse ellipse && ellipse.Intersects(bounds))
         {
             _caretMask ??= CreateCaretMask(new Vector2(_width, _height));
             SetTextGradient(_caretMask.Gradient, ellipse, _left, _top);
