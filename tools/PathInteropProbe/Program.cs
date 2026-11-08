@@ -235,6 +235,12 @@ internal static class Program
                             !(bool)type.GetProperty("HasOutline")!.GetValue(piece)! ||
                             type.GetField("_outlineNativePaths", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece) != null)
                             throw new Exception("Failed outline raster did not release paths and retain its vector fallback.");
+                        DwmFlush();
+                        IntPtr fallbackDc = GetDC(IntPtr.Zero);
+                        uint fallbackPixel;
+                        try { fallbackPixel = GetPixel(fallbackDc, bounds.Left + 50, bounds.Top + 75); }
+                        finally { ReleaseDC(IntPtr.Zero, fallbackDc); }
+                        if (Brightness(fallbackPixel) < 400) throw new Exception($"Outline vector fallback not visible after device failure: {fallbackPixel:X}.");
                     }
                     type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { null });
                     Pump(800);
