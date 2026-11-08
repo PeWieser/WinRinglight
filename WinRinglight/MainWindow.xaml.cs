@@ -670,9 +670,9 @@ namespace WinRinglight
             _wpfOutline.DisableGlow = DevDisableGlow;
             double t = (kelvin - 2000) / 4500.0;
             _wpfOutline.Color = System.Windows.Media.Color.FromRgb((byte)(255 - 20 * t), (byte)(170 + 75 * t), (byte)(50 + 205 * t));
-            var origin = PointFromScreen(new Point(0, 0));
-            var unitX = PointFromScreen(new Point(1, 0));
-            var unitY = PointFromScreen(new Point(0, 1));
+            var origin = PointFromScreen(new System.Windows.Point(0, 0));
+            var unitX = PointFromScreen(new System.Windows.Point(1, 0));
+            var unitY = PointFromScreen(new System.Windows.Point(0, 1));
             _wpfOutline.DeviceToLocal = new Matrix(unitX.X - origin.X, unitX.Y - origin.Y,
                 unitY.X - origin.X, unitY.Y - origin.Y, origin.X, origin.Y);
             _wpfOutline.InvalidateVisual();

@@ -30,7 +30,7 @@ internal sealed class OutlineElement : FrameworkElement
             if (geometry.IsEmpty() || width <= 0) return;
             var brush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, Color.R, Color.G, Color.B));
             brush.Freeze();
-            var pen = new Pen(brush, width);
+            var pen = new System.Windows.Media.Pen(brush, width);
             pen.Freeze();
             dc.DrawGeometry(null, pen, geometry);
         }
