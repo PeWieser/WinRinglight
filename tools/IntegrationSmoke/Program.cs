@@ -1157,6 +1157,36 @@ internal static class Program
             if (curveChanged < 10 || curveMaxDelta > 3)
                 throw new Exception($"Curved Direct2D tile seam differs from whole surface: nonblack={curveChanged}, max delta={curveMaxDelta}.");
             Console.WriteLine($"PASS: Curved Direct2D edge crossing a tile seam matches whole surface (max delta {curveMaxDelta}).");
+            // Two real Composition HWNDs simulate neighbouring displays with
+            // different ring heights; no inner vertical edge should appear.
+            var leftView = new System.Drawing.Rectangle(bounds.Left, bounds.Top, 160, 200);
+            var rightView = new System.Drawing.Rectangle(bounds.Left + 160, bounds.Top, 160, 200);
+            var rightRing = new System.Drawing.Rectangle(rightView.Left, rightView.Top, 160, 160);
+            object leftDirect = Activator.CreateInstance(backendType, new object?[] { leftView, leftView, 30f, true, 4000d,
+                false, true, 2f, null, false, true, 1f, true, true })!;
+            object? rightDirect = null;
+            try
+            {
+                rightDirect = Activator.CreateInstance(backendType, new object?[] { rightView, rightRing, 30f, true, 4000d,
+                    false, true, 2f, null, true, false, 1f, true, true })!;
+                backendType.GetMethod("UpdateCursorAt")!.Invoke(leftDirect, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                backendType.GetMethod("UpdateCursorAt")!.Invoke(rightDirect, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
+                IntPtr dc = GetDC(IntPtr.Zero);
+                try
+                {
+                    static int SumRgb(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
+                    uint leftBottom = GetPixel(dc, bounds.Left + 80, bounds.Top + 165);
+                    uint rightBottom = GetPixel(dc, bounds.Left + 240, bounds.Top + 125);
+                    uint leftSeam = GetPixel(dc, bounds.Left + 158, bounds.Top + 100);
+                    uint rightSeam = GetPixel(dc, bounds.Left + 162, bounds.Top + 100);
+                    if (SumRgb(leftBottom) < 300 || SumRgb(rightBottom) < 300 || SumRgb(leftSeam) > 40 || SumRgb(rightSeam) > 40)
+                        throw new Exception($"Direct2D multi-window segments failed: bottoms={leftBottom:X}/{rightBottom:X}, seam={leftSeam:X}/{rightSeam:X}.");
+                    Console.WriteLine("PASS: Direct2D two-window unequal-height segments have bottom edges and no inner sides.");
+                }
+                finally { ReleaseDC(IntPtr.Zero, dc); }
+            }
+            finally { if (rightDirect != null) ((IDisposable)rightDirect).Dispose(); ((IDisposable)leftDirect).Dispose(); }
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;
