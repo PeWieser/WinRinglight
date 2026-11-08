@@ -156,6 +156,18 @@ internal static class Program
         if (OutlineAlpha(50, 100) < 200 || OutlineAlpha(250, 200) < 200 || OutlineAlpha(100, 150) != 0 || OutlineAlpha(200, 150) != 0)
             throw new Exception("Rounded outline pixel prototype has missing outer or unexpected inner edges.");
         Console.WriteLine("Rounded cross-outline prototype has exposed edges and no internal side edges (WPF pixel test).");
+        var insetSquare = InsetDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100) }, 0, 10);
+        if (Math.Abs(insetSquare.Bounds.Left - 10) > .5 || Math.Abs(insetSquare.Bounds.Top - 10) > .5 ||
+            Math.Abs(insetSquare.Bounds.Right - 90) > .5 || Math.Abs(insetSquare.Bounds.Bottom - 90) > .5 ||
+            insetSquare.FillContains(new System.Windows.Point(5, 50)) || !insetSquare.FillContains(new System.Windows.Point(50, 50)))
+            throw new Exception($"Inset contour failed: {insetSquare.Bounds}.");
+        var insetHole = InsetDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 20), new System.Drawing.Rectangle(0, 80, 100, 20),
+            new System.Drawing.Rectangle(0, 20, 20, 60), new System.Drawing.Rectangle(80, 20, 20, 60) }, 0, 5);
+        if (insetHole.FillContains(new System.Windows.Point(50, 50)) || !insetHole.FillContains(new System.Windows.Point(10, 50)) ||
+            insetHole.FillContains(new System.Windows.Point(2, 50))) throw new Exception("Inset contour hole failed.");
+        var disappearing = InsetDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 10, 100) }, 0, 6);
+        if (!disappearing.IsEmpty()) throw new Exception("Too-narrow inset region should disappear rather than invert.");
+        Console.WriteLine("Inset outline prototype: square, hole and narrow-region checks passed.");
 
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
