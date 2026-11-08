@@ -124,6 +124,18 @@ internal static class Program
             if (!expectedUnits.SetEquals(tracedUnits)) throw new Exception($"Randomized display boundary loop mismatch (case {n}).");
         }
         Console.WriteLine("Display union outline: 200 randomized layouts match independent cell boundaries.");
+        var rounded = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100) }, 20);
+        if (rounded.FillContains(new System.Windows.Point(1, 1)) || !rounded.FillContains(new System.Windows.Point(10, 10)) ||
+            !rounded.FillContains(new System.Windows.Point(50, 50)) || rounded.FillContains(new System.Windows.Point(101, 50)))
+            throw new Exception("Rounded display outline convex corner failed.");
+        var square = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100) }, 0);
+        if (!square.FillContains(new System.Windows.Point(1, 1))) throw new Exception("Zero-radius outline should be rectangular.");
+        var separated = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(120, 0, 100, 100) }, 10);
+        if (separated.FillContains(new System.Windows.Point(110, 50))) throw new Exception("Rounded outline connected a physical gap.");
+        var shortStep = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(100, 2, 100, 98) }, 80);
+        if (!shortStep.FillContains(new System.Windows.Point(50, 50)) || !shortStep.FillContains(new System.Windows.Point(150, 50)))
+            throw new Exception("Rounded outline failed around a short step.");
+        Console.WriteLine("Rounded outline geometry: convex, square, gap and short step checks passed.");
 
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
