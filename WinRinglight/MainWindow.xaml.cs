@@ -743,7 +743,7 @@ namespace WinRinglight
                 _compositionBackend.TileFallbackReason != null ? "Composition active; tiled renderer failed: " + _compositionBackend.TileFallbackReason : "Composition active (whole-monitor masks)";
             if (_compositionBackend.RasterFallbackReason != null)
                 status += "; Direct2D fallback: " + _compositionBackend.RasterFallbackReason;
-            else if (DevDirectRaster) status += "; Direct2D 2x";
+            else if (DevDirectRaster) status += _compositionBackend.UsingSoftwareRaster ? "; Direct2D 2x (WARP software)" : "; Direct2D 2x";
             if (DevCompositionStatus != status) { DevCompositionStatus = status; DevCompositionChanged?.Invoke(this, EventArgs.Empty); }
         }
 

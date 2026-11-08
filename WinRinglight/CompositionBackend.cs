@@ -30,6 +30,7 @@ internal sealed class CompositionBackend : IDisposable
     private DispatcherTimer? _tileSettleTimer;
     private DispatcherTimer? _rasterTimer;
     private Direct2DRingRaster? _directRaster;
+    public bool DirectRasterUsesSoftware => _directRaster?.UsingSoftwareDevice == true;
     private CompositionVisualSurface? _ringVectorSurface;
     private CompositionDrawingSurface? _ringRasterSurface;
     private bool _directRasterActive;

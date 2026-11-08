@@ -16,6 +16,7 @@ internal sealed class CompositionScene : IDisposable
     private Point? _caret;
     private Rectangle? _selection;
     public bool UsingTiles { get; private set; }
+    public bool UsingSoftwareRaster => _windows.Exists(window => window.DirectRasterUsesSoftware);
     public string? TileFallbackReason { get; private set; }
     public string? RasterFallbackReason { get; private set; }
     public event Action<string>? RasterFailed;

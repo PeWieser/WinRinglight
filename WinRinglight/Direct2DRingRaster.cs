@@ -15,6 +15,7 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
     private static readonly Guid DeviceContextId = new("e8f7fe7a-191c-466d-ad95-975678bda998");
     private IntPtr _d3d, _context, _dxgi, _d2d;
     private CompositionGraphicsDevice? _device;
+    public bool UsingSoftwareDevice { get; private set; }
 
     public Direct2DRingRaster(Compositor compositor)
     {
@@ -22,7 +23,11 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
         {
             // D3D11_CREATE_DEVICE_BGRA_SUPPORT. Hosted runners may need WARP.
             int hr = D3D11CreateDevice(IntPtr.Zero, 1, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7, out _d3d, out _, out _context);
-            if (hr < 0) hr = D3D11CreateDevice(IntPtr.Zero, 5, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7, out _d3d, out _, out _context);
+            if (hr < 0)
+            {
+                UsingSoftwareDevice = true;
+                hr = D3D11CreateDevice(IntPtr.Zero, 5, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7, out _d3d, out _, out _context);
+            }
             Marshal.ThrowExceptionForHR(hr);
             Marshal.ThrowExceptionForHR(Marshal.QueryInterface(_d3d, in DxgiDeviceId, out _dxgi));
             Marshal.ThrowExceptionForHR(D2D1CreateDevice(_dxgi, IntPtr.Zero, out _d2d));
