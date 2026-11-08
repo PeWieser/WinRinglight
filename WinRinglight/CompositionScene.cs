@@ -17,6 +17,8 @@ internal sealed class CompositionScene : IDisposable
     private Rectangle? _selection;
     public bool UsingTiles { get; private set; }
     public string? TileFallbackReason { get; private set; }
+    public string? RasterFallbackReason { get; private set; }
+    public event Action<string>? RasterFailed;
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible)
@@ -29,7 +31,7 @@ internal sealed class CompositionScene : IDisposable
             _layout = (CompositionLayout.Piece[])layout.Clone();
             return;
         }
-        List<CompositionBackend> CreateWindows(bool tiled)
+        List<CompositionBackend> CreateWindows(bool tiled, bool directRaster)
         {
             var created = new List<CompositionBackend>();
             try
@@ -37,8 +39,10 @@ internal sealed class CompositionScene : IDisposable
                 foreach (var piece in layout)
                 {
                     float? sharedScale = sharedGeometry && created.Count > 0 ? created[0].DpiScale : null;
-                    created.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible,
-                        cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, 1f, tiled, _directRaster));
+                    var window = new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible,
+                        cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, 1f, tiled, directRaster);
+                    window.DirectRasterFailed += message => { RasterFallbackReason = message; RasterFailed?.Invoke(message); };
+                    created.Add(window);
                 }
                 return created;
             }
@@ -48,18 +52,29 @@ internal sealed class CompositionScene : IDisposable
                 throw;
             }
         }
+        List<CompositionBackend> CreateWithRasterFallback(bool tiled)
+        {
+            try { return CreateWindows(tiled, _directRaster); }
+            catch (Exception ex) when (_directRaster)
+            {
+                RasterFallbackReason = ex.Message;
+                System.Diagnostics.Trace.WriteLine("Direct2D initialization failed; retrying vector Composition: " + ex);
+                return CreateWindows(tiled, false);
+            }
+        }
         List<CompositionBackend> replacements;
         TileFallbackReason = null;
+        RasterFallbackReason = null;
         try
         {
-            replacements = CreateWindows(_useTiles);
+            replacements = CreateWithRasterFallback(_useTiles);
             UsingTiles = _useTiles;
         }
         catch (Exception ex) when (_useTiles)
         {
             System.Diagnostics.Trace.WriteLine("Tiled composition failed; retrying original Composition backend: " + ex);
             TileFallbackReason = ex.Message;
-            replacements = CreateWindows(false);
+            replacements = CreateWithRasterFallback(false);
             UsingTiles = false;
         }
         foreach (var window in _windows) SafeDispose(window);

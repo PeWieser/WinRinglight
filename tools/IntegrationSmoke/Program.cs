@@ -1066,10 +1066,42 @@ internal static class Program
                         throw new Exception($"Caret desktop pixel probe failed (tiled={tiled}, direct={direct}): {initial1:X}/{initial2:X} -> {cut1:X}/{cut2:X} -> {restored1:X}/{restored2:X}");
                     if (RgbSum(selectedStart) > 40 || RgbSum(selectedEnd) > 40 || RgbSum(deselectedStart) < 300 || RgbSum(caretOnly) > 40)
                         throw new Exception($"Selected text desktop pixel probe failed (tiled={tiled}, direct={direct}): {selectedStart:X}/{selectedEnd:X} -> {deselectedStart:X}/{caretOnly:X}.");
+                    if (direct)
+                    {
+                        selectionUpdate.Invoke(probe, new object?[] { null, null });
+                        cursor.Invoke(probe, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                        WaitPixels();
+                        if (tiled && (RgbSum(Pixel(bounds.Left + 255)) < 300 || RgbSum(Pixel(bounds.Left + 256)) < 300))
+                            throw new Exception("Direct2D ring has a gap at the tile boundary.");
+                        var setRing = backendType.GetMethod("SetRing")!;
+                        var activeField = backendType.GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                        setRing.Invoke(probe, new object[] { 30f, false, 4000d, true });
+                        if ((bool)activeField.GetValue(probe)!) throw new Exception("Animation did not return to vector rendering.");
+                        PumpFor(750); DwmFlush();
+                        if (!(bool)activeField.GetValue(probe)!) throw new Exception("Direct2D did not return after style animation.");
+                        var setLayout = backendType.GetMethod("SetLayout")!;
+                        setLayout.Invoke(probe, new object[] { new System.Drawing.Rectangle(bounds.Left, bounds.Top, width, height - 10), true });
+                        if ((bool)activeField.GetValue(probe)!) throw new Exception("Layout animation did not return to vectors.");
+                        PumpFor(750); DwmFlush();
+                        if (!(bool)activeField.GetValue(probe)!) throw new Exception("Direct2D did not return after layout animation.");
+                        setRing.Invoke(probe, new object[] { 30f, false, 5000d, false });
+                        if ((bool)activeField.GetValue(probe)!) throw new Exception("Color change did not invalidate Direct2D pixels.");
+                        PumpFor(750); DwmFlush();
+                        if (!(bool)activeField.GetValue(probe)!) throw new Exception("Direct2D did not redraw after color change.");
+                        bool notified = false;
+                        Action<string> onFailure = _ => notified = true;
+                        backendType.GetEvent("DirectRasterFailed")!.AddEventHandler(probe, onFailure);
+                        ((IDisposable)backendType.GetField("_directRaster", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!).Dispose();
+                        setRing.Invoke(probe, new object[] { 30f, false, 4500d, false });
+                        PumpFor(750);
+                        if ((bool)activeField.GetValue(probe)! || !notified || !(bool)backendType.GetField("_directRasterFailed", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!)
+                            throw new Exception("Direct2D failure did not restore vectors and report fallback.");
+                    }
                 }
                 finally { ((IDisposable)probe).Dispose(); }
             }
             Console.WriteLine("PASS: Real desktop pixels show mouse, caret and full selection cutouts and restoration in both renderers with vector and Direct2D raster.");
+            Console.WriteLine("PASS: Direct2D tile seam, animation and color invalidation, simulated device failure and vector fallback.");
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;

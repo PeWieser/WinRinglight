@@ -34,6 +34,7 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionDrawingSurface? _ringRasterSurface;
     private bool _directRasterActive;
     private bool _directRasterFailed;
+    public event Action<string>? DirectRasterFailed;
     private const int RasterPadding = 0;
     private sealed class MaskTile
     {
@@ -177,6 +178,7 @@ internal sealed class CompositionBackend : IDisposable
                         System.Diagnostics.Trace.WriteLine("Direct2D raster failed; retaining Composition vector renderer: " + ex);
                         RestoreVectorSurfaces();
                         _directRasterFailed = true;
+                        DirectRasterFailed?.Invoke(ex.Message);
                     }
                 };
                 RefreshDirectRaster();

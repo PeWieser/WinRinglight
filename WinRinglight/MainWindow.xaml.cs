@@ -689,6 +689,11 @@ namespace WinRinglight
                     return;
                 }
                 _compositionBackend = new CompositionScene();
+                _compositionBackend.RasterFailed += message =>
+                {
+                    DevCompositionStatus = "Composition active; Direct2D fallback: " + message;
+                    DevCompositionChanged?.Invoke(this, EventArgs.Empty);
+                };
                 _compositionBackend.SetDirectRaster(DevDirectRaster);
                 _compositionBackend.SetTiling(DevTiling);
                 ConfigureCompositionScene();
@@ -736,6 +741,9 @@ namespace WinRinglight
                 Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn);
             string status = _compositionBackend.UsingTiles ? "Composition active (tiled experiment)" :
                 _compositionBackend.TileFallbackReason != null ? "Composition active; tiled renderer failed: " + _compositionBackend.TileFallbackReason : "Composition active (whole-monitor masks)";
+            if (_compositionBackend.RasterFallbackReason != null)
+                status += "; Direct2D fallback: " + _compositionBackend.RasterFallbackReason;
+            else if (DevDirectRaster) status += "; Direct2D 2x";
             if (DevCompositionStatus != status) { DevCompositionStatus = status; DevCompositionChanged?.Invoke(this, EventArgs.Empty); }
         }
 
