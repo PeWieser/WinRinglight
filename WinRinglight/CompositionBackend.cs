@@ -34,7 +34,7 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionDrawingSurface? _ringRasterSurface;
     private bool _directRasterActive;
     private bool _directRasterFailed;
-    private const int RasterPadding = 2;
+    private const int RasterPadding = 0;
     private sealed class MaskTile
     {
         public required System.Drawing.Rectangle Bounds;
@@ -307,9 +307,11 @@ internal sealed class CompositionBackend : IDisposable
     private static void ConfigureRasterBrush(CompositionSurfaceBrush brush, CompositionDrawingSurface surface)
     {
         brush.Surface = surface;
-        brush.Stretch = CompositionStretch.None;
-        brush.Scale = new Vector2(0.5f);
-        brush.Offset = new Vector2(-RasterPadding);
+        // Source is exactly twice the tile size. Fill performs the same
+        // 2x-to-1x linear sampling used in the independent quality probe.
+        brush.Stretch = CompositionStretch.Fill;
+        brush.Scale = Vector2.One;
+        brush.Offset = Vector2.Zero;
     }
 
     private void RestoreVectorSurfaces()
