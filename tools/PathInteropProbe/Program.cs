@@ -37,6 +37,7 @@ internal static class Program
             using var shape = compositor.CreateSpriteShape(geometry);
             shape.StrokeBrush = brush; shape.StrokeThickness = 8;
             ring.Shapes.Clear(); ring.Shapes.Add(shape);
+            source = null!;
             GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
             Pump(1000); DwmFlush();
             IntPtr dc = GetDC(IntPtr.Zero);
@@ -52,8 +53,22 @@ internal static class Program
                 Console.WriteLine("PASS: Rounded Direct2D union geometry is stroked by Composition with no internal edge after GC.");
             }
             finally { ReleaseDC(IntPtr.Zero, dc); }
+            type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Left + 50, bounds.Top + 60 });
+            Pump(500); DwmFlush();
+            dc = GetDC(IntPtr.Zero);
+            uint cut;
+            try { cut = GetPixel(dc, bounds.Left + 50, bounds.Top + 60); }
+            finally { ReleaseDC(IntPtr.Zero, dc); }
+            if ((cut & 0xffffff) > 0x202020) throw new Exception($"Cursor mask did not cut Composition path: {cut:X}.");
+            type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+            Pump(500); DwmFlush();
+            dc = GetDC(IntPtr.Zero);
+            uint restored;
+            try { restored = GetPixel(dc, bounds.Left + 50, bounds.Top + 60); }
+            finally { ReleaseDC(IntPtr.Zero, dc); }
+            if ((restored & 0xffffff) < 0xc0c0c0) throw new Exception($"Composition path did not restore after cursor moved: {restored:X}.");
+            Console.WriteLine("PASS: Composition path respects cursor mask and restores after movement.");
             ring.Shapes.Clear();
-            GC.KeepAlive(source);
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
