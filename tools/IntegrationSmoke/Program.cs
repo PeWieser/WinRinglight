@@ -1032,6 +1032,7 @@ internal static class Program
         {
             background.Show(); PumpFor(150);
             SetCursorPos(screen.WorkingArea.Right - 1, screen.WorkingArea.Bottom - 1);
+            double[] integratedRasterError = new double[2];
             // Real desktop pixels: independently remove the ring at the mouse
             // and caret, then clear only the caret while the mouse remains.
             foreach (bool tiled in new[] { false, true })
@@ -1050,6 +1051,26 @@ internal static class Program
                     uint Pixel(int x) { IntPtr dc = GetDC(IntPtr.Zero); uint p = GetPixel(dc, x, y); ReleaseDC(IntPtr.Zero, dc); return p; }
                     cursor.Invoke(probe, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
                     WaitPixels(); uint initial1 = Pixel(x1), initial2 = Pixel(x2);
+                    if (direct)
+                    {
+                        long diff = 0; int count = 0;
+                        IntPtr dc = GetDC(IntPtr.Zero);
+                        try
+                        {
+                            for (int py = 12; py < 110; py += 2)
+                                for (int px = 12; px < 110; px += 2)
+                                {
+                                    int i = (py * width + px) * 4;
+                                    uint observed = GetPixel(dc, bounds.Left + px, bounds.Top + py);
+                                    diff += Math.Abs((int)(observed & 255) - pixels[i + 2]);
+                                    diff += Math.Abs((int)((observed >> 8) & 255) - pixels[i + 1]);
+                                    diff += Math.Abs((int)((observed >> 16) & 255) - pixels[i]);
+                                    count += 3;
+                                }
+                        }
+                        finally { ReleaseDC(IntPtr.Zero, dc); }
+                        integratedRasterError[tiled ? 1 : 0] = (double)diff / count;
+                    }
                     cursor.Invoke(probe, new object[] { x1, y });
                     caret.Invoke(probe, new object?[] { new System.Drawing.Point(x2, y) });
                     WaitPixels(); uint cut1 = Pixel(x1), cut2 = Pixel(x2);
@@ -1209,6 +1230,9 @@ internal static class Program
                 }
                 finally { ((IDisposable)d2dBackend).Dispose(); }
             }
+            if (Math.Abs(integratedRasterError[0] - d2dErrors[1]) > 0.1 || Math.Abs(integratedRasterError[1] - d2dErrors[1]) > 0.1)
+                throw new Exception($"Integrated Direct2D raster disagrees with reference: whole={integratedRasterError[0]:F4}, tiled={integratedRasterError[1]:F4}, prototype={d2dErrors[1]:F4}.");
+            Console.WriteLine($"PASS: Integrated Direct2D raster matches prototype: whole={integratedRasterError[0]:F4}, tiled={integratedRasterError[1]:F4}, prototype={d2dErrors[1]:F4}.");
             Console.WriteLine($"PARTIAL: Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
             // A separate geometry reference avoids treating WPF's differing glow/edge
             // contours as ground truth. Integrate ideal pixel coverage on a 32x32 grid.
