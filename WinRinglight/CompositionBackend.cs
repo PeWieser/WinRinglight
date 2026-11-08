@@ -409,7 +409,9 @@ internal sealed class CompositionBackend : IDisposable
                 local = new[] { value.Core.Clone(), value.Outer.Clone(), value.Inner.Clone() };
                 foreach (var geometry in local)
                 {
-                    geometry.Transform = new System.Windows.Media.TranslateTransform(-_left, -_top);
+                    var matrix = geometry.Transform?.Value ?? System.Windows.Media.Matrix.Identity;
+                    matrix.Translate(-_left, -_top);
+                    geometry.Transform = new System.Windows.Media.MatrixTransform(matrix);
                     geometry.Freeze();
                 }
                 var path = new CompositionPathGeometry[3];
