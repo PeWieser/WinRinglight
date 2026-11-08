@@ -1175,7 +1175,7 @@ internal static class Program
                 }
                 finally { ((IDisposable)d2dBackend).Dispose(); }
             }
-            Console.WriteLine($"Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
+            Console.WriteLine($"PARTIAL: Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
             Console.WriteLine(errors[1] < errors[0] && changedPixels > 0
                 ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}."
                 : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}; improvement not established.");
