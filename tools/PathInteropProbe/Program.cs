@@ -25,7 +25,7 @@ internal static class Program
         {
             background.Show(); Pump(200);
             var type = typeof(MainWindow).Assembly.GetType("WinRinglight.CompositionBackend")!;
-            backend = Activator.CreateInstance(type, new object?[] { bounds, bounds, 30f, true, 4000d, false, true, 2f, null, false, false, 1f, false })!;
+            backend = Activator.CreateInstance(type, new object?[] { bounds, bounds, 30f, true, 4000d, false, true, 25f, null, false, false, 1f, false })!;
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
