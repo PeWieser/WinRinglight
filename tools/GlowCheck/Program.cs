@@ -143,6 +143,19 @@ internal static class Program
         if (hole.FillContains(new System.Windows.Point(50, 50)) || !hole.FillContains(new System.Windows.Point(10, 50)))
             throw new Exception("Display outline did not preserve the interior gap.");
         Console.WriteLine("Rounded outline geometry: convex, square, gap and short step checks passed.");
+        var crossGeometry = RoundedDisplayOutline.Create(new[] {
+            new System.Drawing.Rectangle(100, 0, 100, 300), new System.Drawing.Rectangle(0, 100, 300, 100) }, 10);
+        var visualOutline = new DrawingVisual();
+        using (var dc = visualOutline.RenderOpen())
+            dc.DrawGeometry(null, new Pen(Brushes.White, 8), crossGeometry);
+        var outlineBitmap = new RenderTargetBitmap(300, 300, 96, 96, PixelFormats.Pbgra32);
+        outlineBitmap.Render(visualOutline);
+        var outlinePixels = new byte[300 * 300 * 4];
+        outlineBitmap.CopyPixels(outlinePixels, 300 * 4, 0);
+        byte OutlineAlpha(int x, int y) => outlinePixels[(y * 300 + x) * 4 + 3];
+        if (OutlineAlpha(50, 100) < 200 || OutlineAlpha(250, 200) < 200 || OutlineAlpha(100, 150) != 0 || OutlineAlpha(200, 150) != 0)
+            throw new Exception("Rounded outline pixel prototype has missing outer or unexpected inner edges.");
+        Console.WriteLine("Rounded cross-outline prototype has exposed edges and no internal side edges (WPF pixel test).");
 
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
