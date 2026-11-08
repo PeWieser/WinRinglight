@@ -1123,6 +1123,40 @@ internal static class Program
             }
             Console.WriteLine("PASS: Real desktop pixels show mouse, caret and full selection cutouts and restoration in both renderers with vector and Direct2D raster.");
             Console.WriteLine("PASS: Direct2D tile seam, animation and color invalidation, simulated device failure and vector fallback.");
+            // Put a rounded corner across a tile boundary and compare the
+            // actual pixels against one large Direct2D surface, not just a
+            // straight section of ring at the boundary.
+            var curvePixels = new uint[10 * 41]; int curveChanged = 0, curveMaxDelta = 0;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var shifted = new System.Drawing.Rectangle(bounds.Left + 180, bounds.Top, width, height);
+                object curveProbe = Activator.CreateInstance(backendType, new object?[] { bounds, shifted, 30f, true, 4000d,
+                    false, true, 2f, null, false, false, 1f, pass == 1, true })!;
+                try
+                {
+                    backendType.GetMethod("UpdateCursorAt")!.Invoke(curveProbe, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                    Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
+                    IntPtr dc = GetDC(IntPtr.Zero);
+                    try
+                    {
+                        int i = 0;
+                        for (int py = 18; py < 100; py += 2)
+                            for (int px = 246; px < 266; px += 2)
+                            {
+                                uint observed = GetPixel(dc, bounds.Left + px, bounds.Top + py);
+                                if (pass == 0) { curvePixels[i] = observed; if ((observed & 0xffffff) != 0) curveChanged++; }
+                                else for (int shift = 0; shift <= 16; shift += 8)
+                                    curveMaxDelta = Math.Max(curveMaxDelta, Math.Abs((int)((observed >> shift) & 255) - (int)((curvePixels[i] >> shift) & 255)));
+                                i++;
+                            }
+                    }
+                    finally { ReleaseDC(IntPtr.Zero, dc); }
+                }
+                finally { ((IDisposable)curveProbe).Dispose(); }
+            }
+            if (curveChanged < 10 || curveMaxDelta > 3)
+                throw new Exception($"Curved Direct2D tile seam differs from whole surface: nonblack={curveChanged}, max delta={curveMaxDelta}.");
+            Console.WriteLine($"PASS: Curved Direct2D edge crossing a tile seam matches whole surface (max delta {curveMaxDelta}).");
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;
