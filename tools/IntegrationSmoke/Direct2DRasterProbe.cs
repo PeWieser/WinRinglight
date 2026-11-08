@@ -79,6 +79,11 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                         Stroke(dc, new RoundedRect(20, 20, 300, 180, radius + 15), 2 * blur * fraction, alpha);
                         Stroke(dc, new RoundedRect(50, 50, 270, 150, radius - 15), 2 * blur * fraction, alpha);
                     }
+                    foreach (var edge in new[] { (width: 3f, alpha: 30), (width: 2f, alpha: 65), (width: 1f, alpha: 110) })
+                    {
+                        Stroke(dc, new RoundedRect(20, 20, 300, 180, radius + 15), edge.width, edge.alpha / 255f);
+                        Stroke(dc, new RoundedRect(50, 50, 270, 150, radius - 15), edge.width, edge.alpha / 255f);
+                    }
                     Stroke(dc, new RoundedRect(35, 35, 285, 165, radius), thickness, 1);
                 }
                 finally { if (dc != IntPtr.Zero) Marshal.Release(dc); Marshal.ThrowExceptionForHR(end(interop)); }

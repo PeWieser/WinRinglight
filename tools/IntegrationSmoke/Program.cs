@@ -1130,38 +1130,49 @@ internal static class Program
             }
             // Independent Direct2D prototype: genuine pixel-backed 2x surface.
             // Keep this outside the application backend until measured and reviewed.
-            object d2dBackend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
-                false, true, 2f, null, false, false, 1f, false })!;
-            try
+            var d2dErrors = new double[2]; uint[]? d2dNative = null; int d2dChanged = 0;
+            for (int scale = 1; scale <= 2; scale++)
             {
-                var compositor = (Windows.UI.Composition.Compositor)backendType.GetField("_compositor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
-                var resultVisual = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
-                using var d2d = new Direct2DRasterProbe(compositor, width, height, 2);
-                using var brush2 = compositor.CreateSurfaceBrush(d2d.Surface);
-                brush2.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
-                brush2.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
-                resultVisual.Brush = brush2;
-                Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
-                IntPtr dc2 = GetDC(IntPtr.Zero);
-                uint core2 = GetPixel(dc2, bounds.Left + 160, bounds.Top + 35);
-                if (Math.Abs((int)(core2 & 255) - 246) > 16 || Math.Abs((int)((core2 >> 8) & 255) - 203) > 16)
-                { ReleaseDC(IntPtr.Zero, dc2); throw new Exception($"Direct2D pixel surface core not visible: {core2:X8}."); }
-                long delta = 0; int count = 0, changedD2D = 0, sample = 0;
-                for (int y = 12; y < 110; y += 2)
-                    for (int x = 12; x < 110; x += 2)
+                object d2dBackend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
+                    false, true, 2f, null, false, false, 1f, false })!;
+                try
+                {
+                    var compositor = (Windows.UI.Composition.Compositor)backendType.GetField("_compositor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
+                    var resultVisual = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
+                    using var d2d = new Direct2DRasterProbe(compositor, width, height, scale);
+                    using var brush2 = compositor.CreateSurfaceBrush(d2d.Surface);
+                    brush2.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
+                    brush2.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
+                    resultVisual.Brush = brush2;
+                    Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
+                    IntPtr dc2 = GetDC(IntPtr.Zero);
+                    try
                     {
-                        int i = (y * width + x) * 4;
-                        uint observed = GetPixel(dc2, bounds.Left + x, bounds.Top + y);
-                        if (firstPixels[sample++] != observed) changedD2D++;
-                        delta += Math.Abs((int)(observed & 255) - pixels[i + 2]);
-                        delta += Math.Abs((int)((observed >> 8) & 255) - pixels[i + 1]);
-                        delta += Math.Abs((int)((observed >> 16) & 255) - pixels[i]);
-                        count += 3;
+                        uint core2 = GetPixel(dc2, bounds.Left + 160, bounds.Top + 35);
+                        if (Math.Abs((int)(core2 & 255) - 246) > 16 || Math.Abs((int)((core2 >> 8) & 255) - 203) > 16)
+                            throw new Exception($"Direct2D pixel surface core not visible: {core2:X8}.");
+                        long delta = 0; int count = 0, sample = 0;
+                        if (scale == 1) d2dNative = new uint[49 * 49];
+                        for (int y = 12; y < 110; y += 2)
+                            for (int x = 12; x < 110; x += 2)
+                            {
+                                int i = (y * width + x) * 4;
+                                uint observed = GetPixel(dc2, bounds.Left + x, bounds.Top + y);
+                                if (scale == 1) d2dNative![sample] = observed;
+                                else if (d2dNative![sample] != observed) d2dChanged++;
+                                sample++;
+                                delta += Math.Abs((int)(observed & 255) - pixels[i + 2]);
+                                delta += Math.Abs((int)((observed >> 8) & 255) - pixels[i + 1]);
+                                delta += Math.Abs((int)((observed >> 16) & 255) - pixels[i]);
+                                count += 3;
+                            }
+                        d2dErrors[scale - 1] = (double)delta / count;
                     }
-                ReleaseDC(IntPtr.Zero, dc2);
-                Console.WriteLine($"PASS: Direct2D 2x pixel-backed probe vs WPF: error={(double)delta / count:F6}, native={errors[0]:F6}, changed={changedD2D}; quality and GPU effect require further assessment.");
+                    finally { ReleaseDC(IntPtr.Zero, dc2); }
+                }
+                finally { ((IDisposable)d2dBackend).Dispose(); }
             }
-            finally { ((IDisposable)d2dBackend).Dispose(); }
+            Console.WriteLine($"Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
             Console.WriteLine(errors[1] < errors[0] && changedPixels > 0
                 ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}."
                 : $"PARTIAL: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}; improvement not established.");
