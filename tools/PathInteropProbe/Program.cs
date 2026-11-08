@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -21,6 +22,7 @@ internal static class Program
         var background = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize,
             Left = bounds.Left, Top = bounds.Top, Width = bounds.Width, Height = bounds.Height, Topmost = true, Background = System.Windows.Media.Brushes.Black };
         object? backend = null;
+        var haloObjects = new List<CompositionObject>();
         try
         {
             background.Show(); Pump(200);
@@ -29,14 +31,36 @@ internal static class Program
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
-            var outline = InsetDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 25, 5);
+            var layers = DisplayOutlineLayers.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20, 1, 8);
+            var outline = layers.Core;
             var source = GeometrySource.Create(outline);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
             using var brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
             using var shape = compositor.CreateSpriteShape(geometry);
             shape.StrokeBrush = brush; shape.StrokeThickness = 8;
-            ring.Shapes.Clear(); ring.Shapes.Add(shape);
+            ring.Shapes.Clear();
+            using var outerGeometry = compositor.CreatePathGeometry(new CompositionPath(GeometrySource.Create(layers.Outer)));
+            using var innerGeometry = compositor.CreatePathGeometry(new CompositionPath(GeometrySource.Create(layers.Inner)));
+            void AddContours(float width, byte opacity)
+            {
+                var haloBrush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(opacity, 255, 255, 255));
+                haloObjects.Add(haloBrush);
+                foreach (var contour in new[] { outerGeometry, innerGeometry })
+                {
+                    var halo = compositor.CreateSpriteShape(contour);
+                    halo.StrokeBrush = haloBrush; halo.StrokeThickness = width;
+                    haloObjects.Add(halo); ring.Shapes.Add(halo);
+                }
+            }
+            for (int i = 12; i >= 1; i--)
+            {
+                float fraction = i / 12f;
+                byte opacity = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75));
+                AddContours(2 * 3.2f * fraction, opacity);
+            }
+            AddContours(3, 30); AddContours(2, 65); AddContours(1, 110);
+            ring.Shapes.Add(shape);
             source = null!;
             GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
             Pump(1000); DwmFlush();
@@ -50,7 +74,7 @@ internal static class Program
                 static int Sum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
                 if (Sum(outer) < 600 || Sum(upper) < 600 || Sum(inner) > 60 || Sum(corner) > 60)
                     throw new Exception($"Composition path pixels invalid: outer={outer:X}, upper={upper:X}, inner={inner:X}, rounded-corner={corner:X}.");
-                Console.WriteLine("PASS: Inset, rounded Direct2D union geometry is stroked by Composition with no internal edge after GC.");
+                Console.WriteLine("PASS: Inset rounded Composition path with separate core/glow contours has no internal edge after GC.");
             }
             finally { ReleaseDC(IntPtr.Zero, dc); }
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Left + 50, bounds.Top + 65 });
@@ -114,7 +138,12 @@ internal static class Program
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
-        finally { if (backend is IDisposable d) d.Dispose(); background.Close(); app.Shutdown(); }
+        finally
+        {
+            if (backend is IDisposable d) d.Dispose();
+            for (int i = haloObjects.Count - 1; i >= 0; i--) haloObjects[i].Dispose();
+            background.Close(); app.Shutdown();
+        }
     }
     private static void Pump(int milliseconds)
     {
