@@ -29,14 +29,15 @@ internal static class Program
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
-            var loops = DisplayOutline.BuildLoops(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) });
-            var source = GeometrySource.Create(loops);
+            var outline = RoundedDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20);
+            var source = GeometrySource.Create(outline);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
             using var brush = compositor.CreateColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
             using var shape = compositor.CreateSpriteShape(geometry);
             shape.StrokeBrush = brush; shape.StrokeThickness = 8;
             ring.Shapes.Clear(); ring.Shapes.Add(shape);
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
             Pump(1000); DwmFlush();
             IntPtr dc = GetDC(IntPtr.Zero);
             try
@@ -44,10 +45,11 @@ internal static class Program
                 uint outer = GetPixel(dc, bounds.Left + 50, bounds.Top + 60);
                 uint upper = GetPixel(dc, bounds.Left + 160, bounds.Top + 20);
                 uint inner = GetPixel(dc, bounds.Left + 100, bounds.Top + 100);
+                uint corner = GetPixel(dc, bounds.Left + 100, bounds.Top + 20);
                 static int Sum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
-                if (Sum(outer) < 600 || Sum(upper) < 600 || Sum(inner) > 60)
-                    throw new Exception($"Composition path pixels invalid: outer={outer:X}, upper={upper:X}, inner={inner:X}.");
-                Console.WriteLine("PASS: Native Direct2D union geometry is stroked by Composition with no internal edge.");
+                if (Sum(outer) < 600 || Sum(upper) < 600 || Sum(inner) > 60 || Sum(corner) > 60)
+                    throw new Exception($"Composition path pixels invalid: outer={outer:X}, upper={upper:X}, inner={inner:X}, rounded-corner={corner:X}.");
+                Console.WriteLine("PASS: Rounded Direct2D union geometry is stroked by Composition with no internal edge after GC.");
             }
             finally { ReleaseDC(IntPtr.Zero, dc); }
             ring.Shapes.Clear();

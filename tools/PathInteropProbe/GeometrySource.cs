@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Windows.Media;
 using Windows.Graphics;
 using WinRT;
 
@@ -99,8 +99,23 @@ internal static unsafe class GeometrySource
     private static int TryGetGeometry(IntPtr self, IntPtr factory, IntPtr* result)
     { if (result == null) return unchecked((int)0x80004003); *result = IntPtr.Zero; return unchecked((int)0x80004001); }
 
-    public static IGeometrySource2D Create(IEnumerable<Point[]> loops)
+    public static IGeometrySource2D Create(Geometry source)
     {
+        var flattened = source.GetFlattenedPathGeometry(0.05, ToleranceType.Absolute);
+        var loops = new List<Vector2[]>();
+        foreach (var figure in flattened.Figures)
+        {
+            if (!figure.IsClosed) throw new InvalidOperationException("Only closed outline figures are supported.");
+            var points = new List<Vector2> { new((float)figure.StartPoint.X, (float)figure.StartPoint.Y) };
+            foreach (var segment in figure.Segments)
+            {
+                if (segment is LineSegment lineSegment) points.Add(new((float)lineSegment.Point.X, (float)lineSegment.Point.Y));
+                else if (segment is PolyLineSegment polyline)
+                    foreach (var point in polyline.Points) points.Add(new((float)point.X, (float)point.Y));
+                else throw new InvalidOperationException("Unexpected segment after geometry flattening.");
+            }
+            loops.Add(points.ToArray());
+        }
         Guid factoryId = FactoryId;
         Marshal.ThrowExceptionForHR(D2D1CreateFactory(1, &factoryId, IntPtr.Zero, out IntPtr factory));
         IntPtr geometry = IntPtr.Zero;
@@ -123,8 +138,8 @@ internal static unsafe class GeometrySource
                 foreach (var loop in loops)
                 {
                     if (loop.Length < 3) continue;
-                    begin(sink, new Vector2(loop[0].X, loop[0].Y), 0);
-                    for (int i = 1; i < loop.Length; i++) line(sink, new Vector2(loop[i].X, loop[i].Y));
+                    begin(sink, loop[0], 0);
+                    for (int i = 1; i < loop.Length; i++) line(sink, loop[i]);
                     end(sink, 1); // closed
                 }
                 Marshal.ThrowExceptionForHR(close(sink));
