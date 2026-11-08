@@ -188,6 +188,43 @@ internal static class Program
                 foreach (var piece in pieces) ((IDisposable)piece).Dispose();
                 for (int i = pathObjects.Count - 1; i >= 0; i--) pathObjects[i].Dispose();
             }
+            // Test the actual backend's opt-in path integration in all four
+            // vector/raster and whole/tiled combinations (not exposed in UI).
+            Geometry Global(Geometry sourceGeometry)
+            {
+                var copy = sourceGeometry.Clone();
+                copy.Transform = new TranslateTransform(bounds.Left, bounds.Top);
+                copy.Freeze();
+                return copy;
+            }
+            var globalLayers = new DisplayOutlineLayers.Layers(Global(layers.Core), Global(layers.Outer), Global(layers.Inner));
+            foreach (bool tiled in new[] { false, true })
+            foreach (bool direct in new[] { false, true })
+            {
+                object piece = Activator.CreateInstance(type, new object?[] { bounds, bounds, 8f, true, 4000d,
+                    false, true, 25f, null, false, false, 1f, tiled, direct })!;
+                try
+                {
+                    type.GetMethod("UpdateCursorAt")!.Invoke(piece, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
+                    type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { globalLayers });
+                    Pump(800); DwmFlush();
+                    if (direct && !(bool)type.GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece)!)
+                        throw new Exception("Backend did not restore 2x outline rendering.");
+                    IntPtr testDc = GetDC(IntPtr.Zero);
+                    uint outer, inner;
+                    try { outer = GetPixel(testDc, bounds.Left + 50, bounds.Top + 65); inner = GetPixel(testDc, bounds.Left + 100, bounds.Top + 100); }
+                    finally { ReleaseDC(IntPtr.Zero, testDc); }
+                    static int Brightness(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
+                    if (Brightness(outer) < 400 || Brightness(inner) > 60)
+                        throw new Exception($"Backend outline pixel mismatch (tiled={tiled}, direct={direct}): {outer:X}/{inner:X}.");
+                    type.GetMethod("SetOutline")!.Invoke(piece, new object?[] { null });
+                    Pump(800);
+                    if (type.GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(piece) != null)
+                        throw new Exception("Backend did not restore the base ring.");
+                }
+                finally { ((IDisposable)piece).Dispose(); }
+            }
+            Console.WriteLine("PASS: Composition backend opt-in outline pixels and base restoration in tiled/whole vector/2x modes.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
