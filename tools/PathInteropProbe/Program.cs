@@ -68,16 +68,32 @@ internal static class Program
             finally { ReleaseDC(IntPtr.Zero, dc); }
             if ((restored & 0xffffff) < 0xc0c0c0) throw new Exception($"Composition path did not restore after cursor moved: {restored:X}.");
             Console.WriteLine("PASS: Composition path respects cursor mask and restores after movement.");
+            var textCutout = type.GetMethod("UpdateTextCutout")!;
+            void VerifySelection()
+            {
+                textCutout.Invoke(backend, new object?[] { new System.Drawing.Point(bounds.Left + 250, bounds.Top + 65),
+                    new Rectangle(bounds.Left + 40, bounds.Top + 57, 240, 16) });
+                Pump(500); DwmFlush();
+                IntPtr selectionDc = GetDC(IntPtr.Zero);
+                uint left, right;
+                try { left = GetPixel(selectionDc, bounds.Left + 50, bounds.Top + 65); right = GetPixel(selectionDc, bounds.Left + 250, bounds.Top + 65); }
+                finally { ReleaseDC(IntPtr.Zero, selectionDc); }
+                if ((left & 0xffffff) > 0x202020 || (right & 0xffffff) > 0x202020)
+                    throw new Exception($"Path selection mask failed: {left:X}/{right:X}.");
+                textCutout.Invoke(backend, new object?[] { null, null });
+                Pump(500); DwmFlush();
+            }
+            VerifySelection();
+            Console.WriteLine("PASS: Composition path respects the full text-selection mask.");
             try
             {
                 // Independent 2x Direct2D path surface, displayed at 1x, uses
                 // the same path data as the Composition prototype, rebuilt for the drawing factory.
                 using var raster = new Direct2DRasterProbe(compositor, bounds.Width, bounds.Height, 2, pathFactory: factory => GeometrySource.CreateNative(outline, factory));
-                using var surfaceBrush = compositor.CreateSurfaceBrush(raster.Surface);
-                surfaceBrush.Stretch = CompositionStretch.Fill;
-                surfaceBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
-                var result = (SpriteVisual)type.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
-                result.Brush = surfaceBrush;
+                var ringBrush = (CompositionSurfaceBrush)type.GetField("_ringBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+                ringBrush.Surface = raster.Surface;
+                ringBrush.Stretch = CompositionStretch.Fill;
+                ringBrush.BitmapInterpolationMode = CompositionBitmapInterpolationMode.Linear;
                 Pump(800); DwmFlush();
                 dc = GetDC(IntPtr.Zero);
                 try
@@ -90,6 +106,8 @@ internal static class Program
                     Console.WriteLine("PASS: Direct2D 2x surface renders the same inset, rounded union path without inner edge.");
                 }
                 finally { ReleaseDC(IntPtr.Zero, dc); }
+                VerifySelection();
+                Console.WriteLine("PASS: Direct2D 2x path respects the full text-selection mask.");
             }
             finally { }
             ring.Shapes.Clear();
