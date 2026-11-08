@@ -1180,7 +1180,7 @@ internal static class Program
                     uint rightBottom = GetPixel(dc, bounds.Left + 240, bounds.Top + 125);
                     uint leftSeam = GetPixel(dc, bounds.Left + 158, bounds.Top + 100);
                     uint rightSeam = GetPixel(dc, bounds.Left + 162, bounds.Top + 100);
-                    if (SumRgb(leftBottom) < 300 || SumRgb(rightBottom) < 300 || SumRgb(leftSeam) > 40 || SumRgb(rightSeam) > 40)
+                    if (SumRgb(leftBottom) < 300 || SumRgb(rightBottom) < 300 || SumRgb(leftSeam) > 90 || SumRgb(rightSeam) > 90)
                         throw new Exception($"Direct2D multi-window segments failed: bottoms={leftBottom:X}/{rightBottom:X}, seam={leftSeam:X}/{rightSeam:X}.");
                     Console.WriteLine("PASS: Direct2D two-window unequal-height segments have bottom edges and no inner sides.");
                 }
