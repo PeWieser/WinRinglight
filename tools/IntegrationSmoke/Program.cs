@@ -1226,7 +1226,31 @@ internal static class Program
                 finally { ((IDisposable)probe).Dispose(); }
             }
             if (idealEdges.Count < 20) throw new Exception("Analytic raster reference has too few edge samples.");
-            Console.WriteLine($"PARTIAL: Direct2D core-only geometric coverage comparison: 1x={idealError[0]:F4}, 2x={idealError[1]:F4}, fractional edge pixels={idealEdges.Count}; lower is better.");
+            double compositionIdealError;
+            object compositionCore = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
+                false, true, 2f, null, false, false, 1f, false })!;
+            try
+            {
+                var ring = (Windows.UI.Composition.ShapeVisual)backendType.GetField("_ring", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(compositionCore)!;
+                while (ring.Shapes.Count > 1) ring.Shapes.RemoveAt(0);
+                Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
+                IntPtr dc = GetDC(IntPtr.Zero);
+                try
+                {
+                    double sum = 0;
+                    foreach (var edge in idealEdges)
+                    {
+                        uint observed = GetPixel(dc, bounds.Left + edge.X, bounds.Top + edge.Y);
+                        sum += Math.Abs((observed & 255) - 246 * edge.Coverage);
+                        sum += Math.Abs(((observed >> 8) & 255) - 203 * edge.Coverage);
+                        sum += Math.Abs(((observed >> 16) & 255) - 141 * edge.Coverage);
+                    }
+                    compositionIdealError = sum / (idealEdges.Count * 3);
+                }
+                finally { ReleaseDC(IntPtr.Zero, dc); }
+            }
+            finally { ((IDisposable)compositionCore).Dispose(); }
+            Console.WriteLine($"PARTIAL: Core-only geometric coverage comparison: Composition={compositionIdealError:F4}, Direct2D 1x={idealError[0]:F4}, 2x={idealError[1]:F4}, fractional edge pixels={idealEdges.Count}; lower is better.");
 
             Console.WriteLine(errors[1] < errors[0] && changedPixels > 0
                 ? $"PASS: Desktop corner raster comparison vs WPF: native error={errors[0]:F6}, 2x error={errors[1]:F6}, changed={changedPixels}."
