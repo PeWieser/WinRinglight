@@ -282,6 +282,16 @@ internal static class Program
                     throw new Exception("Outline option was not persisted.");
             if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
                 throw new Exception("Spanned outline not installed in Composition: " + window.DevCompositionStatus);
+            var roundTrip = System.Text.Json.JsonSerializer.Deserialize<SettingsData>(System.IO.File.ReadAllText(configPath));
+            var legacy = System.Text.Json.JsonSerializer.Deserialize<SettingsData>("{\"IsSpanned\":true}");
+            if (roundTrip?.SpannedDisplayOutline != true || legacy?.SpannedDisplayOutline != false)
+                throw new Exception("Outline option did not survive reload or changed legacy defaults.");
+            var fullscreen = (System.Collections.Generic.HashSet<string>)typeof(MainWindow).GetField("_fullscreenMonitors", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+            fullscreen.Add(System.Windows.Forms.Screen.AllScreens[0].DeviceName);
+            window.UpdateMonitorSetup();
+            if (!window.DevCompositionActive || !(bool)GetFirstBackend(window).GetType().GetProperty("HasOutline")!.GetValue(GetFirstBackend(window))!)
+                throw new Exception("Fullscreen transition lost the outline.");
+            fullscreen.Clear(); window.UpdateMonitorSetup(); PumpFor(500);
             var outlineBefore = GetFirstBackend(window).GetType().GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window));
             window.ApplySettingsLive(1, Config.Current.Thickness, 4500);
             var outlineAfter = GetFirstBackend(window).GetType().GetField("_outline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window));

@@ -6,8 +6,7 @@ using System.Windows.Media;
 namespace WinRinglight;
 
 /// <summary>
-/// Shared outline geometry prototype for core and inner/outer glow contours.
-/// It is not wired into the application renderers yet.
+/// Shared physical-pixel geometry for the spanned outline's core and glow contours.
 /// </summary>
 public static class DisplayOutlineLayers
 {

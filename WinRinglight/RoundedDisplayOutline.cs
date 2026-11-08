@@ -8,8 +8,7 @@ using Point = System.Windows.Point;
 
 namespace WinRinglight;
 
-/// <summary>Prototype: rounded geometry of display-boundary loops.
-/// This is not yet used by the renderers. Coordinates are physical pixels.</summary>
+/// <summary>Rounded geometry of display-boundary loops in physical pixels.</summary>
 public static class RoundedDisplayOutline
 {
     public static StreamGeometry Create(IEnumerable<Rectangle> displays, double radius)

@@ -854,6 +854,7 @@ namespace WinRinglight
         private void ApplyDevExperiments()
         {
             MainGrid.CacheMode = DevCacheGroup ? new BitmapCache() : null;
+            if (_wpfOutline != null) { _wpfOutline.DisableGlow = DevDisableGlow; _wpfOutline.InvalidateVisual(); }
             foreach (var border in _activeBorders)
             {
                 border.CacheMode = DevCacheElements ? new BitmapCache() : null;

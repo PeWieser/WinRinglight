@@ -34,8 +34,7 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionVisualSurface? _ringVectorSurface;
     private CompositionDrawingSurface? _ringRasterSurface;
     private bool _directRasterActive;
-    // Optional experimental outline; not enabled by scene/UI until the
-    // topology-transition and WPF fallback paths have been tested.
+    // Optional shared outline; the default remains the original ring geometry.
     private DisplayOutlineLayers.Layers? _outline;
     public bool HasOutline => _outline != null;
     private System.Windows.Media.Geometry[]? _outlineLocal;
@@ -633,9 +632,9 @@ internal sealed class CompositionBackend : IDisposable
     {
         if (_compositor == null || _ring == null) return;
         thickness *= _dpiScale;
-        // Geometry is supplied in physical pixels and must be rebuilt by the
-        // scene when thickness or style changes. Restore the safe base path
-        // until that replacement is ready.
+        // A thickness change rebuilds the base strokes; the scene supplies a
+        // matching outline immediately afterwards. Style-only changes retain
+        // the old path so the replacement can crossfade.
         if (_outline != null && _currentThickness != thickness) SetOutline(null);
         if (_coreBrush != null && _currentThickness == thickness)
         {

@@ -6,8 +6,7 @@ using System.Windows.Media;
 namespace WinRinglight;
 
 /// <summary>
-/// Isolated geometry prototype, not yet wired into any renderer. An inward
-/// offset keeps a stroked contour inside the union of the selected rectangles.
+/// An inward offset keeps a stroked contour inside the union of the selected rectangles.
 /// Narrow connections can split or vanish; no pixels are invented in gaps.
 /// </summary>
 public static class InsetDisplayOutline

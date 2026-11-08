@@ -6,7 +6,7 @@
 
 - **Virtual Ring Light:** Overlays a customizable light ring on your screen.
 - **Smart Temperature:** Automatically adjusts color temperature based on the time of day to match ambient light.
-- **Multi-Monitor Support:** Span the light across all monitors or select specific ones.
+- **Multi-Monitor Support:** Span the light across all monitors or select specific ones. In System settings, spanning can optionally follow the monitors’ actual outer outline, including steps for mismatched positions and sizes; the original spanning display remains the default.
 - **Webcam Detection:** Automatically turns on the ring light when your webcam becomes active.
 - **Global Hotkeys:** Toggle the light instantly with customizable combinations (e.g., `Ctrl + Alt + R`).
 - **Cursor Cutout:** Dynamically hides the light around your mouse cursor to ensure UI visibility and prevent clicking issues.
