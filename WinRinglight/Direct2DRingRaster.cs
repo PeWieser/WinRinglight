@@ -52,8 +52,19 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
         catch { Dispose(); throw; }
     }
 
+    public IntPtr[] CreatePaths(System.Windows.Media.Geometry[] geometry)
+    {
+        if (_d2d == IntPtr.Zero) throw new ObjectDisposedException(nameof(Direct2DRingRaster));
+        IntPtr factory = IntPtr.Zero;
+        var getFactory = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr*, void>)(*(IntPtr**)_d2d)[3];
+        getFactory(_d2d, &factory);
+        if (factory == IntPtr.Zero) throw new InvalidOperationException("Direct2D factory unavailable.");
+        try { return CompositionGeometryInterop.CreateNativeSet(factory, geometry); }
+        finally { Marshal.Release(factory); }
+    }
+
     public CompositionDrawingSurface Draw(int width, int height, int scale, float originX, float originY,
-        float left, float top, float right, float bottom, float radius, float thickness, float dpi, Windows.UI.Color color)
+        float left, float top, float right, float bottom, float radius, float thickness, float dpi, Windows.UI.Color color, IntPtr[]? paths = null)
     {
         var surface = _device!.CreateDrawingSurface(new Windows.Foundation.Size(width * scale, height * scale),
             DirectXPixelFormat.B8G8R8A8UIntNormalized, DirectXAlphaMode.Premultiplied);
@@ -85,13 +96,16 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
                         {
                             float fraction = i / 12f;
                             float alpha = (float)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75)) / 255f;
-                            StrokePair(dc, outer, inner, 2 * blur * fraction, alpha, color);
+                            if (paths == null) StrokePair(dc, outer, inner, 2 * blur * fraction, alpha, color);
+                            else StrokePaths(dc, paths[1], paths[2], 2 * blur * fraction, alpha, color);
                         }
                         foreach (var edge in new[] { (width: 3f, alpha: 30), (width: 2f, alpha: 65), (width: 1f, alpha: 110) })
                         {
-                            StrokePair(dc, outer, inner, edge.width * dpi, edge.alpha / 255f, color);
+                            if (paths == null) StrokePair(dc, outer, inner, edge.width * dpi, edge.alpha / 255f, color);
+                            else StrokePaths(dc, paths[1], paths[2], edge.width * dpi, edge.alpha / 255f, color);
                         }
-                        Stroke(dc, new RoundedRect(left, top, right, bottom, radius), thickness, 1, color);
+                        if (paths == null) Stroke(dc, new RoundedRect(left, top, right, bottom, radius), thickness, 1, color);
+                        else StrokePaths(dc, paths[0], IntPtr.Zero, thickness, 1, color);
                     }
                     finally { if (dc != IntPtr.Zero) Marshal.Release(dc); Marshal.ThrowExceptionForHR(end(interop)); }
                 }
@@ -101,6 +115,18 @@ internal sealed unsafe class Direct2DRingRaster : IDisposable
             return surface;
         }
         catch { surface.Dispose(); throw; }
+    }
+
+    private static void StrokePaths(IntPtr dc, IntPtr first, IntPtr second, float width, float alpha, Windows.UI.Color ringColor)
+    {
+        var vt = *(IntPtr**)dc;
+        var create = (delegate* unmanaged[Stdcall]<IntPtr, ColorF*, IntPtr, IntPtr*, int>)vt[8];
+        var draw = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, float, IntPtr, void>)vt[22];
+        ColorF color = new(ringColor.R / 255f, ringColor.G / 255f, ringColor.B / 255f, alpha);
+        IntPtr brush = IntPtr.Zero;
+        Marshal.ThrowExceptionForHR(create(dc, &color, IntPtr.Zero, &brush));
+        try { draw(dc, first, brush, width, IntPtr.Zero); if (second != IntPtr.Zero) draw(dc, second, brush, width, IntPtr.Zero); }
+        finally { if (brush != IntPtr.Zero) Marshal.Release(brush); }
     }
 
     // Both contours have the same color and opacity. Reuse one device brush

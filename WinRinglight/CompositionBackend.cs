@@ -34,6 +34,16 @@ internal sealed class CompositionBackend : IDisposable
     private CompositionVisualSurface? _ringVectorSurface;
     private CompositionDrawingSurface? _ringRasterSurface;
     private bool _directRasterActive;
+    // Optional experimental outline; not enabled by scene/UI until the
+    // topology-transition and WPF fallback paths have been tested.
+    private DisplayOutlineLayers.Layers? _outline;
+    private System.Windows.Media.Geometry[]? _outlineLocal;
+    private System.Windows.Media.Geometry? _outlineCoverage;
+    private readonly List<CompositionObject> _outlineObjects = new();
+    private readonly List<CompositionShape> _baseShapes = new();
+    private readonly List<CompositionColorBrush> _outlineHaloBrushes = new();
+    private CompositionColorBrush? _outlineCoreBrush;
+    private IntPtr[]? _outlineNativePaths;
     private bool _directRasterFailed;
     public event Action<string>? DirectRasterFailed;
     private const int RasterPadding = 0;
@@ -257,6 +267,18 @@ internal sealed class CompositionBackend : IDisposable
     private void RefreshTileVisibility()
     {
         if (_tiles.Count == 0 || _geometry == null) return;
+        if (_outlineCoverage != null)
+        {
+            foreach (var tile in _tiles)
+            {
+                var b = tile.Bounds;
+                var tileGeometry = new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(b.Left, b.Top, b.Width, b.Height));
+                bool visible = _outlineCoverage.FillContainsWithDetail(tileGeometry) != System.Windows.Media.IntersectionDetail.Empty;
+                tile.Visual.IsVisible = visible;
+                if (visible) UpdateTileCursor(tile, _lastX, _lastY);
+            }
+            return;
+        }
         float thickness = (float)_currentThickness;
         float inset = _currentRounded ? 20 * _dpiScale : 0;
         float radius = _geometry.CornerRadius.X / _rasterScale;
@@ -341,10 +363,11 @@ internal sealed class CompositionBackend : IDisposable
         float top = _ringBounds.Top - _top + inset + thickness / 2;
         float width = Math.Max(0, _ringBounds.Width + extraLeft + extraRight - inset * 2 - thickness);
         float height = Math.Max(0, _ringBounds.Height - inset * 2 - thickness);
-        var color = _coreBrush.Color;
+        var color = _outlineCoreBrush?.Color ?? _coreBrush.Color;
+        if (_outlineLocal != null && _outlineNativePaths == null) _outlineNativePaths = _directRaster.CreatePaths(_outlineLocal);
         CompositionDrawingSurface Draw(int x, int y, int w, int h) => _directRaster.Draw(
             w + 2 * RasterPadding, h + 2 * RasterPadding, 2, x - RasterPadding, y - RasterPadding,
-            left, top, left + width, top + height, radius, thickness, _dpiScale, color);
+            left, top, left + width, top + height, radius, thickness, _dpiScale, color, _outlineNativePaths);
         // Draw all replacements first. Failure leaves every brush on its
         // existing vector surface, rather than a partially updated ring.
         var created = new List<(MaskTile Tile, CompositionDrawingSurface Surface)>();
@@ -365,6 +388,94 @@ internal sealed class CompositionBackend : IDisposable
             full?.Dispose();
             foreach (var item in created) item.Surface.Dispose();
         }
+    }
+
+    // The caller supplies global physical-pixel paths shared by every display.
+    // Build replacement resources before changing the visual; a failed build
+    // therefore leaves the previous ring intact.
+    public void SetOutline(DisplayOutlineLayers.Layers? layers)
+    {
+        if (_ring == null || _compositor == null) return;
+        var created = new List<CompositionObject>();
+        var shapes = new List<CompositionShape>();
+        var haloBrushes = new List<CompositionColorBrush>();
+        CompositionColorBrush? coreBrush = null;
+        System.Windows.Media.Geometry[]? local = null;
+        System.Windows.Media.Geometry? coverage = null;
+        try
+        {
+            if (layers is DisplayOutlineLayers.Layers value)
+            {
+                local = new[] { value.Core.Clone(), value.Outer.Clone(), value.Inner.Clone() };
+                foreach (var geometry in local)
+                {
+                    geometry.Transform = new System.Windows.Media.TranslateTransform(-_left, -_top);
+                    geometry.Freeze();
+                }
+                var path = new CompositionPathGeometry[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    path[i] = _compositor.CreatePathGeometry(new CompositionPath(CompositionGeometryInterop.Create(local[i])));
+                    created.Add(path[i]);
+                }
+                Color color = _coreBrush?.Color ?? Color.FromArgb(255, 255, 255, 255);
+                float thickness = (float)_currentThickness;
+                float blur = Math.Min(40, thickness * 0.4f);
+                void AddPair(float width, byte alpha)
+                {
+                    var brush = _compositor.CreateColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
+                    created.Add(brush); haloBrushes.Add(brush);
+                    for (int i = 1; i <= 2; i++)
+                    {
+                        var shape = _compositor.CreateSpriteShape(path[i]);
+                        shape.StrokeBrush = brush; shape.StrokeThickness = width;
+                        created.Add(shape); shapes.Add(shape);
+                    }
+                }
+                for (int i = 12; i >= 1; i--)
+                {
+                    float fraction = i / 12f;
+                    byte alpha = (byte)Math.Round(255 * 0.55 * 0.035 * (1 - fraction * 0.75));
+                    AddPair(2 * blur * fraction, alpha);
+                }
+                AddPair(3 * _dpiScale, 30); AddPair(2 * _dpiScale, 65); AddPair(_dpiScale, 110);
+                var core = _compositor.CreateSpriteShape(path[0]);
+                coreBrush = _compositor.CreateColorBrush(color);
+                created.Add(coreBrush); created.Add(core);
+                core.StrokeBrush = coreBrush; core.StrokeThickness = thickness;
+                shapes.Add(core);
+                // Conservative stroke coverage avoids activating large fully
+                // transparent inner tiles; a safety margin includes glow.
+                var pen = new System.Windows.Media.Pen(System.Windows.Media.Brushes.Black,
+                    thickness + 2 * (blur + 4 * _dpiScale + 4));
+                coverage = value.Core.GetWidenedPathGeometry(pen, 0.25, System.Windows.Media.ToleranceType.Absolute);
+                coverage.Freeze();
+            }
+            ScheduleDirectRaster();
+            if (_outline == null && layers != null)
+            {
+                _baseShapes.Clear();
+                foreach (var shape in _ring.Shapes) _baseShapes.Add(shape);
+            }
+            _ring.Shapes.Clear();
+            if (layers == null) { foreach (var shape in _baseShapes) _ring.Shapes.Add(shape); _baseShapes.Clear(); }
+            else foreach (var shape in shapes) _ring.Shapes.Add(shape);
+            for (int i = _outlineObjects.Count - 1; i >= 0; i--) _outlineObjects[i].Dispose();
+            _outlineObjects.Clear(); _outlineObjects.AddRange(created); created.Clear();
+            _outlineHaloBrushes.Clear(); _outlineHaloBrushes.AddRange(haloBrushes);
+            _outlineCoreBrush = coreBrush;
+            ReleaseOutlineNativePaths();
+            _outline = layers; _outlineLocal = local; _outlineCoverage = coverage;
+            RefreshTileVisibility();
+        }
+        finally { for (int i = created.Count - 1; i >= 0; i--) created[i].Dispose(); }
+    }
+
+    private void ReleaseOutlineNativePaths()
+    {
+        if (_outlineNativePaths == null) return;
+        foreach (var path in _outlineNativePaths) if (path != IntPtr.Zero) Marshal.Release(path);
+        _outlineNativePaths = null;
     }
 
     private ExtraMask CreateCaretMask(Vector2 size)
@@ -450,6 +561,10 @@ internal sealed class CompositionBackend : IDisposable
     {
         if (_compositor == null || _ring == null) return;
         thickness *= _dpiScale;
+        // Geometry is supplied in physical pixels and must be rebuilt by the
+        // scene when thickness or style changes. Restore the safe base path
+        // until that replacement is ready.
+        if (_outline != null && (_currentThickness != thickness || _currentRounded != rounded)) SetOutline(null);
         if (_coreBrush != null && _currentThickness == thickness)
         {
             bool changed = _currentRounded != rounded || !_coreBrush.Color.Equals(ToColor(kelvin));
@@ -607,6 +722,8 @@ internal sealed class CompositionBackend : IDisposable
     private void UpdateColor(double kelvin)
     {
         var color = ToColor(kelvin);
+        if (_outlineCoreBrush != null) _outlineCoreBrush.Color = color;
+        foreach (var brush in _outlineHaloBrushes) brush.Color = Color.FromArgb(brush.Color.A, color.R, color.G, color.B);
         if (_coreBrush != null) _coreBrush.Color = color;
         for (int i = 0; i < _haloBrushes.Count; i++)
         {
@@ -678,7 +795,11 @@ internal sealed class CompositionBackend : IDisposable
             _rasterTimer?.Stop();
             _rasterTimer = null;
             try { RestoreVectorSurfaces(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
+            ReleaseOutlineNativePaths();
             _directRaster?.Dispose(); _directRaster = null;
+            for (int i = _outlineObjects.Count - 1; i >= 0; i--) DisposeSafely(_outlineObjects[i]);
+            _outlineObjects.Clear(); _baseShapes.Clear(); _outlineHaloBrushes.Clear();
+            _outline = null; _outlineLocal = null; _outlineCoverage = null; _outlineCoreBrush = null;
             _tiles.Clear();
             _tileRoot = null;
             if (_target != null)
