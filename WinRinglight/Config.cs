@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -19,6 +19,7 @@ namespace WinRinglight
         public bool TextCaretCutout { get; set; } = false;
         public int VisualStyleIndex { get; set; } = 0;
         public bool IsSpanned { get; set; } = false;
+        public bool SpannedDisplayOutline { get; set; } = false;
         // List of monitor indices that should show a ringlight
         public List<int> SelectedMonitors { get; set; } = new List<int> { 0 };
         public bool AutoWebcam { get; set; } = false;
@@ -97,6 +98,10 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "SpannedDisplayOutline", new Dictionary<string, string> {
+                { "de", "Tatsächliche Außenkontur der Monitore (mit Stufen)" },
+                { "en", "Follow the actual display outline (with steps)" }
+            }},
             { "DevComposition", new Dictionary<string, string> {
                 { "de", "Composition-Renderer testen (experimentell)" },
                 { "en", "Test Composition renderer (experimental)" }

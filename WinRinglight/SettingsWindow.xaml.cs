@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.Windows;
@@ -56,6 +56,7 @@ namespace WinRinglight
             ChkDevElementCache.IsChecked = _mainWindow.DevCacheElements;
             ChkDevGroupCache.IsChecked = _mainWindow.DevCacheGroup;
             ChkDevNoGlow.IsChecked = _mainWindow.DevDisableGlow;
+            LblDisplayOutline.Text = Config.GetText("SpannedDisplayOutline");
             LblTextCaret.Text = Config.GetText("TextCaretCutout");
             ChkTextCaret.IsChecked = Config.Current.TextCaretCutout;
             LblCursorFps.Text = Config.GetText("CursorFps");
@@ -143,6 +144,8 @@ namespace WinRinglight
             }
             MonitorItemsControl.ItemsSource = monitorList;
             ChkSpanAll.IsChecked = Config.Current.IsSpanned;
+            ChkDisplayOutline.IsChecked = Config.Current.SpannedDisplayOutline;
+            ChkDisplayOutline.IsEnabled = Config.Current.IsSpanned;
             }
             finally { _refreshingMonitors = false; }
         }
@@ -173,6 +176,15 @@ namespace WinRinglight
         {
             if (!this.IsLoaded || _refreshingMonitors) return;
             Config.Current.IsSpanned = ChkSpanAll.IsChecked == true;
+            ChkDisplayOutline.IsEnabled = Config.Current.IsSpanned;
+            _mainWindow.UpdateMonitorSetup();
+            Config.Save();
+        }
+
+        private void ChkDisplayOutline_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded || _refreshingMonitors) return;
+            Config.Current.SpannedDisplayOutline = ChkDisplayOutline.IsChecked == true;
             _mainWindow.UpdateMonitorSetup();
             Config.Save();
         }

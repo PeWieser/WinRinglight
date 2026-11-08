@@ -247,6 +247,10 @@
                                       Checked="ChkSpanAll_Changed" Unchecked="ChkSpanAll_Changed">
                                 <TextBlock x:Name="LblSpanAll" Text="Über alle Monitore spannen"/>
                             </CheckBox>
+                            <CheckBox x:Name="ChkDisplayOutline" Margin="20,10,0,0" Foreground="White"
+                                      Checked="ChkDisplayOutline_Changed" Unchecked="ChkDisplayOutline_Changed">
+                                <TextBlock x:Name="LblDisplayOutline" TextWrapping="Wrap"/>
+                            </CheckBox>
                         </StackPanel>
                     </Border>
 

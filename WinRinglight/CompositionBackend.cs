@@ -37,6 +37,7 @@ internal sealed class CompositionBackend : IDisposable
     // Optional experimental outline; not enabled by scene/UI until the
     // topology-transition and WPF fallback paths have been tested.
     private DisplayOutlineLayers.Layers? _outline;
+    public bool HasOutline => _outline != null;
     private System.Windows.Media.Geometry[]? _outlineLocal;
     private System.Windows.Media.Geometry? _outlineCoverage;
     private readonly List<CompositionObject> _outlineObjects = new();
@@ -395,7 +396,7 @@ internal sealed class CompositionBackend : IDisposable
     // therefore leaves the previous ring intact.
     public void SetOutline(DisplayOutlineLayers.Layers? layers)
     {
-        if (_ring == null || _compositor == null) return;
+        if (_ring == null || _compositor == null || (_outline == null && layers == null)) return;
         var created = new List<CompositionObject>();
         var shapes = new List<CompositionShape>();
         var haloBrushes = new List<CompositionColorBrush>();

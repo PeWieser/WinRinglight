@@ -11,7 +11,10 @@ internal sealed class CompositionScene : IDisposable
     private CompositionLayout.Piece[] _layout = Array.Empty<CompositionLayout.Piece>();
     private float _cursorRadius;
     private bool _sharedGeometry;
+    private bool _outlineMode;
     private bool _directRaster;
+    private DisplayOutlineLayers.Layers? _outline;
+    public float DpiScale => _windows.Count > 0 ? _windows[0].DpiScale : 1;
     private bool _useTiles = true;
     private Point? _caret;
     private Rectangle? _selection;
@@ -22,11 +25,11 @@ internal sealed class CompositionScene : IDisposable
     public event Action<string>? RasterFailed;
 
     public void Configure(CompositionLayout.Piece[] layout, float cursorRadius, float thickness, bool rounded,
-        double kelvin, bool excludeCapture, bool visible)
+        double kelvin, bool excludeCapture, bool visible, bool outlineMode = false)
     {
         bool sharedGeometry = layout.Length > 1;
         for (int i = 1; i < layout.Length; i++) sharedGeometry &= layout[i].Ring == layout[0].Ring;
-        if (SameViewports(layout) && _cursorRadius == cursorRadius && sharedGeometry == _sharedGeometry)
+        if (SameViewports(layout) && _cursorRadius == cursorRadius && sharedGeometry == _sharedGeometry && outlineMode == _outlineMode)
         {
             for (int i = 0; i < layout.Length; i++) _windows[i].SetLayout(layout[i].Ring, true);
             _layout = (CompositionLayout.Piece[])layout.Clone();
@@ -39,11 +42,12 @@ internal sealed class CompositionScene : IDisposable
             {
                 foreach (var piece in layout)
                 {
-                    float? sharedScale = sharedGeometry && created.Count > 0 ? created[0].DpiScale : null;
+                    float? sharedScale = (sharedGeometry || outlineMode) && created.Count > 0 ? created[0].DpiScale : null;
                     var window = new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible,
                         cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, 1f, tiled, directRaster);
                     window.DirectRasterFailed += message => { RasterFallbackReason = message; RasterFailed?.Invoke(message); };
                     created.Add(window);
+                    if (outlineMode && _outline != null) window.SetOutline(_outline);
                 }
                 return created;
             }
@@ -85,6 +89,14 @@ internal sealed class CompositionScene : IDisposable
         _layout = (CompositionLayout.Piece[])layout.Clone();
         _cursorRadius = cursorRadius;
         _sharedGeometry = sharedGeometry;
+        _outlineMode = outlineMode;
+    }
+
+    public void SetOutline(DisplayOutlineLayers.Layers? outline)
+    {
+        if (Nullable.Equals(_outline, outline)) return;
+        foreach (var window in _windows) window.SetOutline(outline);
+        _outline = outline;
     }
 
     public void SetTiling(bool enabled)
@@ -113,6 +125,9 @@ internal sealed class CompositionScene : IDisposable
     public void SetRing(float thickness, bool rounded, double kelvin, bool animateStyle = false)
     {
         foreach (var window in _windows) window.SetRing(thickness, rounded, kelvin, animateStyle);
+        // SetRing restores the base geometry when thickness or style changes.
+        // Invalidate our cached path so the caller installs a matching one.
+        if (_outline != null && _windows.Exists(window => !window.HasOutline)) _outline = null;
     }
     public void SetVisible(bool visible) { foreach (var window in _windows) window.SetVisible(visible); }
     public void UpdateCursor() { foreach (var window in _windows) window.UpdateCursor(); }

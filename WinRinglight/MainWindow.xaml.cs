@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -608,6 +608,55 @@ namespace WinRinglight
                     border.CornerRadius = new CornerRadius(3);
                 }
             }
+            UpdateOutlineAppearance(Config.Current.Thickness, _displayedTemperature);
+        }
+
+        private OutlineElement? _wpfOutline;
+        private string? _outlineKey;
+        private DisplayOutlineLayers.Layers? _outlineLayers;
+
+        private void UpdateOutlineAppearance(double thickness, double kelvin)
+        {
+            bool enabled = Config.Current.IsSpanned && Config.Current.SpannedDisplayOutline;
+            foreach (var border in _activeBorders) border.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+            if (!enabled)
+            {
+                if (_wpfOutline != null) _wpfOutline.Visibility = Visibility.Collapsed;
+                _compositionBackend?.SetOutline(null);
+                _outlineKey = null; _outlineLayers = null;
+                return;
+            }
+            var screens = System.Windows.Forms.Screen.AllScreens;
+            var displays = new CompositionLayout.Display[screens.Length];
+            for (int i = 0; i < screens.Length; i++) displays[i] = new(screens[i].Bounds, screens[i].WorkingArea);
+            var regions = DisplayOutline.WorkingRegions(displays, _fullscreenMonitors.Count > 0);
+            float scale = _compositionBackend?.DpiScale ?? (float)VisualTreeHelper.GetDpi(this).DpiScaleX;
+            double pixels = Math.Max(0.01, thickness * scale);
+            bool rounded = Config.Current.VisualStyleIndex == 0;
+            double radius = rounded && screens.Length > 0
+                ? Math.Min(screens[0].Bounds.Width, screens[0].Bounds.Height) * 0.22 : 3 * scale;
+            string key = $"{pixels:R}/{scale:R}/{rounded}/{radius:R}/" + string.Join(";", regions);
+            if (_outlineKey != key || _outlineLayers == null)
+            {
+                _outlineLayers = DisplayOutlineLayers.Create(regions, radius, rounded ? 20 * scale : 0, pixels);
+                _outlineKey = key;
+            }
+            _compositionBackend?.SetOutline(_outlineLayers);
+            if (_wpfOutline == null) _wpfOutline = new OutlineElement { IsHitTestVisible = false };
+            if (!MainGrid.Children.Contains(_wpfOutline)) MainGrid.Children.Add(_wpfOutline);
+            _wpfOutline.Visibility = Visibility.Visible;
+            _wpfOutline.Layers = _outlineLayers;
+            _wpfOutline.Thickness = pixels;
+            _wpfOutline.DpiScale = scale;
+            _wpfOutline.DisableGlow = DevDisableGlow;
+            double t = (kelvin - 2000) / 4500.0;
+            _wpfOutline.Color = System.Windows.Media.Color.FromRgb((byte)(255 - 20 * t), (byte)(170 + 75 * t), (byte)(50 + 205 * t));
+            var origin = PointFromScreen(new Point(0, 0));
+            var unitX = PointFromScreen(new Point(1, 0));
+            var unitY = PointFromScreen(new Point(0, 1));
+            _wpfOutline.DeviceToLocal = new Matrix(unitX.X - origin.X, unitX.Y - origin.Y,
+                unitY.X - origin.X, unitY.Y - origin.Y, origin.X, origin.Y);
+            _wpfOutline.InvalidateVisual();
         }
 
         private System.Collections.Generic.List<System.Windows.Controls.Border> _activeBorders = new System.Collections.Generic.List<System.Windows.Controls.Border>();
@@ -738,7 +787,9 @@ namespace WinRinglight
             var primary = System.Windows.Forms.Screen.PrimaryScreen;
             float radius = (float)((primary?.Bounds.Height ?? 0) * Config.CursorCutoutRadiusPercent);
             _compositionBackend.Configure(layout, radius, (float)Config.Current.Thickness,
-                Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn);
+                Config.Current.VisualStyleIndex == 0, _displayedTemperature, Config.Current.HideFromCapture, _isRinglightOn,
+                Config.Current.IsSpanned && Config.Current.SpannedDisplayOutline);
+            UpdateOutlineAppearance(Config.Current.Thickness, _displayedTemperature);
             string status = _compositionBackend.UsingTiles ? "Composition active (tiled experiment)" :
                 _compositionBackend.TileFallbackReason != null ? "Composition active; tiled renderer failed: " + _compositionBackend.TileFallbackReason : "Composition active (whole-monitor masks)";
             if (_compositionBackend.RasterFallbackReason != null)
@@ -875,6 +926,7 @@ namespace WinRinglight
                 try { ConfigureCompositionScene(); }
                 catch (Exception ex) { FailComposition(ex); }
             }
+            else UpdateOutlineAppearance(Config.Current.Thickness, _displayedTemperature);
         }
 
         public double GetSmartTemperature()
@@ -957,10 +1009,12 @@ namespace WinRinglight
                 try
                 {
                     _compositionBackend.SetRing((float)thickness, Config.Current.VisualStyleIndex == 0, kelvin);
+                    UpdateOutlineAppearance(thickness, kelvin);
                     return;
                 }
                 catch (Exception ex) { FailComposition(ex); }
             }
+            UpdateOutlineAppearance(thickness, kelvin);
             foreach (var border in _activeBorders)
             {
                 border.BorderThickness = new Thickness(thickness);
