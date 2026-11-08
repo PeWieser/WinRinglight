@@ -40,12 +40,16 @@ public static class RoundedDisplayOutline
                     var b = corners[i]; var c = corners[(i + 1) % corners.Count];
                     var before = b - a; var after = c - b;
                     double lengthBefore = before.Length, lengthAfter = after.Length;
-                    var r = Math.Min(radius, Math.Min(lengthBefore, lengthAfter) / 2);
+                    // A rounded concave corner of the raw screen union cuts
+                    // through the non-display area. Keep it sharp until an
+                    // inset contour is implemented and tested on real monitors.
+                    bool rightTurn = before.X * after.Y - before.Y * after.X > 0;
+                    var r = rightTurn ? Math.Min(radius, Math.Min(lengthBefore, lengthAfter) / 2) : 0;
                     before.Normalize(); after.Normalize();
                     radii[i] = r;
                     incoming[i] = b - before * r;
                     outgoing[i] = b + after * r;
-                    clockwise[i] = before.X * after.Y - before.Y * after.X > 0;
+                    clockwise[i] = rightTurn;
                 }
                 context.BeginFigure(outgoing[0], true, true);
                 for (int step = 1; step <= corners.Count; step++)

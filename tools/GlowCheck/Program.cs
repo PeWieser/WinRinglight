@@ -135,6 +135,13 @@ internal static class Program
         var shortStep = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(100, 2, 100, 98) }, 80);
         if (!shortStep.FillContains(new System.Windows.Point(50, 50)) || !shortStep.FillContains(new System.Windows.Point(150, 50)))
             throw new Exception("Rounded outline failed around a short step.");
+
+        var concave = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 200), new System.Drawing.Rectangle(100, 100, 100, 100) }, 20);
+        if (concave.FillContains(new System.Windows.Point(105, 95))) throw new Exception("Concave rounding extended the display union into a gap.");
+        var hole = RoundedDisplayOutline.Create(new[] { new System.Drawing.Rectangle(0, 0, 100, 20), new System.Drawing.Rectangle(0, 80, 100, 20),
+            new System.Drawing.Rectangle(0, 20, 20, 60), new System.Drawing.Rectangle(80, 20, 20, 60) }, 0);
+        if (hole.FillContains(new System.Windows.Point(50, 50)) || !hole.FillContains(new System.Windows.Point(10, 50)))
+            throw new Exception("Display outline did not preserve the interior gap.");
         Console.WriteLine("Rounded outline geometry: convex, square, gap and short step checks passed.");
 
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
