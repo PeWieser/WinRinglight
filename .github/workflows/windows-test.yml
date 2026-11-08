@@ -20,6 +20,8 @@ jobs:
         run: dotnet build WinRinglight/WinRinglight.csproj --configuration Release
       - name: Check glow geometry on Windows
         run: dotnet run --project tools/GlowCheck/GlowCheck.csproj --configuration Release
+      - name: Build Composition path interop probe
+        run: dotnet build tools/PathInteropProbe/PathInteropProbe.csproj --configuration Release
       - name: Run desktop integration smoke test (if interactive desktop available)
         shell: pwsh
         run: |
