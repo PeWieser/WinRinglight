@@ -267,6 +267,19 @@ internal static class Program
                 finally { foreach (var piece in pair) ((IDisposable)piece).Dispose(); }
             }
             Console.WriteLine("PASS: Production backend contour and selection cross two tiled HWNDs in vector and 2x modes.");
+            var fallback = new OutlineElement { Width = bounds.Width, Height = bounds.Height, Layers = globalLayers,
+                Thickness = 8, DpiScale = 1, Color = System.Windows.Media.Colors.White,
+                DeviceToLocal = new Matrix(1, 0, 0, 1, -bounds.Left, -bounds.Top) };
+            fallback.Measure(new System.Windows.Size(bounds.Width, bounds.Height));
+            fallback.Arrange(new System.Windows.Rect(0, 0, bounds.Width, bounds.Height));
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(bounds.Width, bounds.Height, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(fallback);
+            var bytes = new byte[bounds.Width * bounds.Height * 4];
+            bitmap.CopyPixels(bytes, bounds.Width * 4, 0);
+            byte Alpha(int x, int y) => bytes[(y * bounds.Width + x) * 4 + 3];
+            if (Alpha(50, 65) < 220 || Alpha(100, 100) > 15)
+                throw new Exception($"WPF outline fallback pixel mismatch: {Alpha(50,65)}/{Alpha(100,100)}.");
+            Console.WriteLine("PASS: WPF fallback renders the same outline and leaves the interior transparent.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL: " + ex); return 1; }
