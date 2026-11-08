@@ -77,6 +77,29 @@ internal static class Program
         CheckOutline("overlap", new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(50, 0, 100, 100) },
             new(T, 0, 0, 150), new(B, 100, 0, 150), new(L, 0, 0, 100), new(R, 150, 0, 100));
         Console.WriteLine("Display union outlines: stacked, cross, gap and overlap checks passed.");
+        var random = new Random(9173);
+        for (int n = 0; n < 200; n++)
+        {
+            var screens = new System.Drawing.Rectangle[random.Next(1, 7)];
+            for (int i = 0; i < screens.Length; i++) screens[i] = new System.Drawing.Rectangle(random.Next(-5, 6), random.Next(-5, 6), random.Next(1, 6), random.Next(1, 6));
+            bool Occupied(int x, int y) => Array.Exists(screens, r => r.Contains(x, y));
+            var expectedUnits = new HashSet<DisplayOutline.Edge>();
+            for (int y = -5; y < 11; y++) for (int x = -5; x < 11; x++)
+            {
+                if (!Occupied(x, y)) continue;
+                if (!Occupied(x, y - 1)) expectedUnits.Add(new(T, y, x, x + 1));
+                if (!Occupied(x, y + 1)) expectedUnits.Add(new(B, y + 1, x, x + 1));
+                if (!Occupied(x - 1, y)) expectedUnits.Add(new(L, x, y, y + 1));
+                if (!Occupied(x + 1, y)) expectedUnits.Add(new(R, x + 1, y, y + 1));
+            }
+            var actualUnits = new HashSet<DisplayOutline.Edge>();
+            foreach (var edge in DisplayOutline.Build(screens))
+                for (int p = edge.Start; p < edge.End; p++)
+                    if (!actualUnits.Add(edge with { Start = p, End = p + 1 })) throw new Exception("Duplicate union outline edge.");
+            if (!expectedUnits.SetEquals(actualUnits)) throw new Exception($"Randomized display outline mismatch (case {n}).");
+        }
+        Console.WriteLine("Display union outline: 200 randomized layouts match independent cell boundaries.");
+
         var viewport = new System.Drawing.Rectangle(0, 0, 100, 100);
         if (!CursorCoverage.Intersects(viewport, 50, 50, 10) ||
             !CursorCoverage.Intersects(viewport, -10, 50, 10) ||
