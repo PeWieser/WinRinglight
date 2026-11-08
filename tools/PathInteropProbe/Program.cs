@@ -29,7 +29,7 @@ internal static class Program
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
             var compositor = (Compositor)type.GetField("_compositor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
             var ring = (ShapeVisual)type.GetField("_ring", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(backend)!;
-            var outline = RoundedDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 20);
+            var outline = InsetDisplayOutline.Create(new[] { new Rectangle(100, 20, 120, 160), new Rectangle(20, 60, 280, 80) }, 25, 5);
             var source = GeometrySource.Create(outline);
             var path = new CompositionPath(source);
             using var geometry = compositor.CreatePathGeometry(path);
@@ -43,28 +43,28 @@ internal static class Program
             IntPtr dc = GetDC(IntPtr.Zero);
             try
             {
-                uint outer = GetPixel(dc, bounds.Left + 50, bounds.Top + 60);
-                uint upper = GetPixel(dc, bounds.Left + 160, bounds.Top + 20);
+                uint outer = GetPixel(dc, bounds.Left + 50, bounds.Top + 65);
+                uint upper = GetPixel(dc, bounds.Left + 160, bounds.Top + 25);
                 uint inner = GetPixel(dc, bounds.Left + 100, bounds.Top + 100);
-                uint corner = GetPixel(dc, bounds.Left + 100, bounds.Top + 20);
+                uint corner = GetPixel(dc, bounds.Left + 105, bounds.Top + 25);
                 static int Sum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
                 if (Sum(outer) < 600 || Sum(upper) < 600 || Sum(inner) > 60 || Sum(corner) > 60)
                     throw new Exception($"Composition path pixels invalid: outer={outer:X}, upper={upper:X}, inner={inner:X}, rounded-corner={corner:X}.");
-                Console.WriteLine("PASS: Rounded Direct2D union geometry is stroked by Composition with no internal edge after GC.");
+                Console.WriteLine("PASS: Inset, rounded Direct2D union geometry is stroked by Composition with no internal edge after GC.");
             }
             finally { ReleaseDC(IntPtr.Zero, dc); }
-            type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Left + 50, bounds.Top + 60 });
+            type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Left + 50, bounds.Top + 65 });
             Pump(500); DwmFlush();
             dc = GetDC(IntPtr.Zero);
             uint cut;
-            try { cut = GetPixel(dc, bounds.Left + 50, bounds.Top + 60); }
+            try { cut = GetPixel(dc, bounds.Left + 50, bounds.Top + 65); }
             finally { ReleaseDC(IntPtr.Zero, dc); }
             if ((cut & 0xffffff) > 0x202020) throw new Exception($"Cursor mask did not cut Composition path: {cut:X}.");
             type.GetMethod("UpdateCursorAt")!.Invoke(backend, new object[] { bounds.Right + 100, bounds.Bottom + 100 });
             Pump(500); DwmFlush();
             dc = GetDC(IntPtr.Zero);
             uint restored;
-            try { restored = GetPixel(dc, bounds.Left + 50, bounds.Top + 60); }
+            try { restored = GetPixel(dc, bounds.Left + 50, bounds.Top + 65); }
             finally { ReleaseDC(IntPtr.Zero, dc); }
             if ((restored & 0xffffff) < 0xc0c0c0) throw new Exception($"Composition path did not restore after cursor moved: {restored:X}.");
             Console.WriteLine("PASS: Composition path respects cursor mask and restores after movement.");
@@ -82,12 +82,12 @@ internal static class Program
                 dc = GetDC(IntPtr.Zero);
                 try
                 {
-                    uint edge = GetPixel(dc, bounds.Left + 50, bounds.Top + 60);
+                    uint edge = GetPixel(dc, bounds.Left + 50, bounds.Top + 65);
                     uint voidPixel = GetPixel(dc, bounds.Left + 100, bounds.Top + 100);
-                    uint roundedCorner = GetPixel(dc, bounds.Left + 100, bounds.Top + 20);
+                    uint roundedCorner = GetPixel(dc, bounds.Left + 105, bounds.Top + 25);
                     if ((edge & 0xffffff) < 0xc0c0c0 || (voidPixel & 0xffffff) > 0x202020 || (roundedCorner & 0xffffff) > 0x202020)
                         throw new Exception($"Direct2D 2x path pixels invalid: edge={edge:X}, inner={voidPixel:X}, corner={roundedCorner:X}.");
-                    Console.WriteLine("PASS: Direct2D 2x surface renders the same rounded union path without inner edge.");
+                    Console.WriteLine("PASS: Direct2D 2x surface renders the same inset, rounded union path without inner edge.");
                 }
                 finally { ReleaseDC(IntPtr.Zero, dc); }
             }
