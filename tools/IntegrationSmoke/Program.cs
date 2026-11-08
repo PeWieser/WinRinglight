@@ -1203,10 +1203,10 @@ internal static class Program
                     var compositor = (Windows.UI.Composition.Compositor)backendType.GetField("_compositor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!;
                     var result = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!;
                     using var surface = new Direct2DRasterProbe(compositor, width, height, scale, coreOnly: true);
-                    using var brush = compositor.CreateSurfaceBrush(surface.Surface);
-                    brush.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
-                    brush.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
-                    result.Brush = brush;
+                    using var coreBrush = compositor.CreateSurfaceBrush(surface.Surface);
+                    coreBrush.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
+                    coreBrush.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
+                    result.Brush = coreBrush;
                     Pump(); System.Threading.Thread.Sleep(600); DwmFlush();
                     IntPtr dc = GetDC(IntPtr.Zero);
                     try
