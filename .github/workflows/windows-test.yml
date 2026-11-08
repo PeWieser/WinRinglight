@@ -37,6 +37,23 @@ jobs:
           if (-not $finished) { $summary += '%0AFAIL: Desktop integration smoke test timed out.' }
           Write-Output "::notice::$summary"
           if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
+      - name: Probe native Composition path interop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $stdout = "$env:RUNNER_TEMP/path-out.log"
+          $stderr = "$env:RUNNER_TEMP/path-err.log"
+          $process = Start-Process dotnet -ArgumentList @('run', '--project', 'tools/PathInteropProbe/PathInteropProbe.csproj', '--configuration', 'Release') -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $finished = $process.WaitForExit(90000)
+          if (-not $finished) { taskkill /PID $process.Id /T /F | Out-Null }
+          $lines = @()
+          if (Test-Path $stdout) { $lines += Get-Content $stdout }
+          if (Test-Path $stderr) { $lines += Get-Content $stderr }
+          $lines | ForEach-Object { Write-Output $_ }
+          $summary = ($lines | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
+          if (-not $finished) { $summary += '%0AFAIL: Composition path probe timed out.' }
+          Write-Output "::notice::$summary"
+          if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
       - name: Publish portable x64 app
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/win-x64
       - name: Upload Windows test version
