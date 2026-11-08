@@ -15,7 +15,7 @@ internal sealed class OutlineElement : FrameworkElement
     public Matrix DeviceToLocal { get; set; } = Matrix.Identity;
     public double Thickness { get; set; }
     public double DpiScale { get; set; } = 1;
-    public Color Color { get; set; }
+    public System.Windows.Media.Color Color { get; set; }
     public bool DisableGlow { get; set; }
 
     protected override void OnRender(DrawingContext dc)
