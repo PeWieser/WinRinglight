@@ -53,6 +53,45 @@ public static class DisplayOutline
         }
         return result.ToArray();
     }
+    /// <summary>
+    /// Working-area regions for the experimental union contour. Physical
+    /// neighbours may have taskbar cutouts along their shared seam; bridge
+    /// only the overlap of their usable ranges to keep the union connected.
+    /// Non-touching displays never receive an artificial bridge.
+    /// </summary>
+    public static Rectangle[] WorkingRegions(IReadOnlyList<CompositionLayout.Display> displays, bool fullscreen)
+    {
+        var areas = displays.Select(d => fullscreen ? d.Bounds : Rectangle.Intersect(d.Bounds, d.WorkingArea)).ToArray();
+        var result = areas.Where(a => a.Width > 0 && a.Height > 0).ToList();
+        if (fullscreen) return result.ToArray();
+        for (int i = 0; i < displays.Count; i++)
+            for (int j = i + 1; j < displays.Count; j++)
+            {
+                var a = displays[i].Bounds; var b = displays[j].Bounds;
+                var wa = areas[i]; var wb = areas[j];
+                if (wa.Width <= 0 || wa.Height <= 0 || wb.Width <= 0 || wb.Height <= 0) continue;
+                void Horizontal(Rectangle left, Rectangle right, Rectangle workLeft, Rectangle workRight)
+                {
+                    if (left.Right != right.Left) return;
+                    int top = Math.Max(Math.Max(left.Top, right.Top), Math.Max(workLeft.Top, workRight.Top));
+                    int bottom = Math.Min(Math.Min(left.Bottom, right.Bottom), Math.Min(workLeft.Bottom, workRight.Bottom));
+                    if (bottom > top && workRight.Left > workLeft.Right)
+                        result.Add(Rectangle.FromLTRB(workLeft.Right, top, workRight.Left, bottom));
+                }
+                void Vertical(Rectangle topBounds, Rectangle bottomBounds, Rectangle workTop, Rectangle workBottom)
+                {
+                    if (topBounds.Bottom != bottomBounds.Top) return;
+                    int left = Math.Max(Math.Max(topBounds.Left, bottomBounds.Left), Math.Max(workTop.Left, workBottom.Left));
+                    int right = Math.Min(Math.Min(topBounds.Right, bottomBounds.Right), Math.Min(workTop.Right, workBottom.Right));
+                    if (right > left && workBottom.Top > workTop.Bottom)
+                        result.Add(Rectangle.FromLTRB(left, workTop.Bottom, right, workBottom.Top));
+                }
+                Horizontal(a, b, wa, wb); Horizontal(b, a, wb, wa);
+                Vertical(a, b, wa, wb); Vertical(b, a, wb, wa);
+            }
+        return result.ToArray();
+    }
+
     /// <summary>Trace directed boundary loops; monitor material stays on the right.
     /// At corner-only contacts, prefer a right turn so distinct regions do not
     /// become one self-intersecting path. Holes have the opposite winding.</summary>

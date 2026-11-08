@@ -77,6 +77,25 @@ internal static class Program
         CheckOutline("overlap", new[] { new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(50, 0, 100, 100) },
             new(T, 0, 0, 150), new(B, 100, 0, 150), new(L, 0, 0, 100), new(R, 150, 0, 100));
         Console.WriteLine("Display union outlines: stacked, cross, gap and overlap checks passed.");
+        var stackedTaskbar = new[] {
+            new CompositionLayout.Display(new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(0, 0, 100, 90)),
+            new CompositionLayout.Display(new System.Drawing.Rectangle(0, 100, 100, 100), new System.Drawing.Rectangle(0, 100, 100, 100)) };
+        var connectedAreas = DisplayOutline.WorkingRegions(stackedTaskbar, false);
+        CheckOutline("taskbar at stacked seam", connectedAreas,
+            new(T, 0, 0, 100), new(B, 200, 0, 100), new(L, 0, 0, 200), new(R, 100, 0, 200));
+        var fullAreas = DisplayOutline.WorkingRegions(stackedTaskbar, true);
+        CheckOutline("fullscreen stacked", fullAreas,
+            new(T, 0, 0, 100), new(B, 200, 0, 100), new(L, 0, 0, 200), new(R, 100, 0, 200));
+        var separateTaskbar = new[] { stackedTaskbar[0], new CompositionLayout.Display(new System.Drawing.Rectangle(0, 110, 100, 100), new System.Drawing.Rectangle(0, 110, 100, 100)) };
+        if (DisplayOutline.BuildLoops(DisplayOutline.WorkingRegions(separateTaskbar, false)).Length != 2)
+            throw new Exception("Taskbar bridging must not connect physically separated monitors.");
+        var sideTaskbar = new[] {
+            new CompositionLayout.Display(new System.Drawing.Rectangle(0, 0, 100, 100), new System.Drawing.Rectangle(0, 0, 90, 100)),
+            new CompositionLayout.Display(new System.Drawing.Rectangle(100, 20, 100, 80), new System.Drawing.Rectangle(100, 20, 100, 80)) };
+        var sideRegions = DisplayOutline.WorkingRegions(sideTaskbar, false);
+        if (DisplayOutline.BuildLoops(sideRegions).Length != 1 || !Array.Exists(sideRegions, r => r.Contains(95, 50)))
+            throw new Exception("Side taskbar bridge did not restore the shared monitor seam.");
+        Console.WriteLine("Display working-region prototype: internal taskbar seams bridge; physical gaps remain separate.");
         var touching = DisplayOutline.BuildLoops(new[] { new System.Drawing.Rectangle(0, 0, 2, 2), new System.Drawing.Rectangle(2, 2, 2, 2) });
         if (touching.Length != 2) throw new Exception("Corner-touching screens must yield distinct boundary loops.");
         var random = new Random(9173);
