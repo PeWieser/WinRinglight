@@ -252,16 +252,15 @@ internal static class Program
                 throw new Exception("Composition style did not change.");
             style.SelectedIndex = 0;
             if (!window.DevCompositionActive) throw new Exception("Style change back caused fallback.");
-            var quality = (CheckBox)settings.FindName("ChkDevSupersampling");
+            var quality = (CheckBox)settings.FindName("ChkDevDirectRaster");
             quality.IsChecked = true;
-            if (!window.DevCompositionActive || !window.DevSupersampling) throw new Exception("Supersampling toggle failed.");
+            if (!window.DevCompositionActive || !window.DevDirectRaster) throw new Exception("Supersampling toggle failed.");
             object highBackend = GetFirstBackend(window);
-            float qualityScale = (float)highBackend.GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(highBackend)!;
-            if (qualityScale < 1 || qualityScale > 2) throw new Exception("Supersampling scale out of range.");
-            quality.IsChecked = false;
-            float nativeScale = (float)GetFirstBackend(window).GetType().GetField("_rasterScale", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(GetFirstBackend(window))!;
-            if (!window.DevCompositionActive || window.DevSupersampling || nativeScale != 1) throw new Exception("Native resolution toggle failed.");
-            Console.WriteLine($"PASS: Optional supersampling toggles safely; scale={qualityScale:F2} then {nativeScale:F2}.");
+            bool directActive = (bool)highBackend.GetType().GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(highBackend)!;
+            if (!directActive) throw new Exception("Direct2D raster was not activated.");
+            quality.IsChecked = false; Pump();
+            if (!window.DevCompositionActive || window.DevDirectRaster) throw new Exception("Native rendering toggle failed.");
+            Console.WriteLine("PASS: Direct2D raster toggle activates a real pixel surface and returns to vector rendering.");
             var monitorItems = (ItemsControl)settings.FindName("MonitorItemsControl");
             object? sourceBefore = monitorItems.ItemsSource;
             int selectionCount = Config.Current.SelectedMonitors.Count;
@@ -1036,11 +1035,14 @@ internal static class Program
             // Real desktop pixels: independently remove the ring at the mouse
             // and caret, then clear only the caret while the mouse remains.
             foreach (bool tiled in new[] { false, true })
+            foreach (bool direct in new[] { false, true })
             {
                 object probe = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
-                    false, true, 25f, null, false, false, 1f, tiled })!;
+                    false, true, 25f, null, false, false, 1f, tiled, direct })!;
                 try
                 {
+                    if (direct && !(bool)backendType.GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(probe)!)
+                        throw new Exception("Direct2D renderer did not activate in pixel probe.");
                     var cursor = backendType.GetMethod("UpdateCursorAt")!;
                     var caret = backendType.GetMethod("UpdateCaret")!;
                     int x1 = bounds.Left + 100, x2 = bounds.Left + 220, y = bounds.Top + 35;
@@ -1061,13 +1063,13 @@ internal static class Program
                     WaitPixels(); uint deselectedStart = Pixel(bounds.Left + 85), caretOnly = Pixel(x2);
                     static int RgbSum(uint p) => (int)(p & 255) + (int)((p >> 8) & 255) + (int)((p >> 16) & 255);
                     if (RgbSum(initial1) < 300 || RgbSum(initial2) < 300 || RgbSum(cut1) > 40 || RgbSum(cut2) > 40 || RgbSum(restored1) > 40 || RgbSum(restored2) < 300)
-                        throw new Exception($"Caret desktop pixel probe failed (tiled={tiled}): {initial1:X}/{initial2:X} -> {cut1:X}/{cut2:X} -> {restored1:X}/{restored2:X}");
+                        throw new Exception($"Caret desktop pixel probe failed (tiled={tiled}, direct={direct}): {initial1:X}/{initial2:X} -> {cut1:X}/{cut2:X} -> {restored1:X}/{restored2:X}");
                     if (RgbSum(selectedStart) > 40 || RgbSum(selectedEnd) > 40 || RgbSum(deselectedStart) < 300 || RgbSum(caretOnly) > 40)
-                        throw new Exception($"Selected text desktop pixel probe failed (tiled={tiled}): {selectedStart:X}/{selectedEnd:X} -> {deselectedStart:X}/{caretOnly:X}.");
+                        throw new Exception($"Selected text desktop pixel probe failed (tiled={tiled}, direct={direct}): {selectedStart:X}/{selectedEnd:X} -> {deselectedStart:X}/{caretOnly:X}.");
                 }
                 finally { ((IDisposable)probe).Dispose(); }
             }
-            Console.WriteLine("PASS: Real desktop pixels show mouse, caret and full selection cutouts and restoration in both renderers.");
+            Console.WriteLine("PASS: Real desktop pixels show mouse, caret and full selection cutouts and restoration in both renderers with vector and Direct2D raster.");
             double[] errors = new double[2];
             var firstPixels = new System.Collections.Generic.List<uint>();
             int changedPixels = 0;

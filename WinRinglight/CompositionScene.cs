@@ -11,7 +11,7 @@ internal sealed class CompositionScene : IDisposable
     private CompositionLayout.Piece[] _layout = Array.Empty<CompositionLayout.Piece>();
     private float _cursorRadius;
     private bool _sharedGeometry;
-    private float _maximumRasterScale = 1;
+    private bool _directRaster;
     private bool _useTiles = true;
     private Point? _caret;
     private Rectangle? _selection;
@@ -38,7 +38,7 @@ internal sealed class CompositionScene : IDisposable
                 {
                     float? sharedScale = sharedGeometry && created.Count > 0 ? created[0].DpiScale : null;
                     created.Add(new CompositionBackend(piece.Viewport, piece.Ring, thickness, rounded, kelvin, excludeCapture, visible,
-                        cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, _maximumRasterScale, tiled));
+                        cursorRadius, sharedScale, piece.ExtendLeft, piece.ExtendRight, 1f, tiled, _directRaster));
                 }
                 return created;
             }
@@ -78,11 +78,10 @@ internal sealed class CompositionScene : IDisposable
         InvalidateLayout();
     }
 
-    public void SetSupersampling(bool enabled)
+    public void SetDirectRaster(bool enabled)
     {
-        float value = enabled ? 2 : 1;
-        if (_maximumRasterScale == value) return;
-        _maximumRasterScale = value;
+        if (_directRaster == enabled) return;
+        _directRaster = enabled;
         InvalidateLayout();
     }
 

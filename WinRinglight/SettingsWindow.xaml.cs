@@ -44,8 +44,8 @@ namespace WinRinglight
             LblDevComposition.Text = Config.GetText("DevComposition");
             LblDevTiling.Text = Config.GetText("DevTiling");
             ChkDevTiling.IsChecked = _mainWindow.DevTiling;
-            LblDevSupersampling.Text = Config.GetText("DevSupersampling");
-            ChkDevSupersampling.IsChecked = _mainWindow.DevSupersampling;
+            LblDevDirectRaster.Text = Config.GetText("DevDirectRaster");
+            ChkDevDirectRaster.IsChecked = _mainWindow.DevDirectRaster;
             _mainWindow.DevCompositionChanged += CompositionStateChanged;
             CompositionStateChanged(null, EventArgs.Empty);
             LblDevDescription.Text = Config.GetText("DevDescription");
@@ -233,10 +233,10 @@ namespace WinRinglight
             _mainWindow.SetDevTiling(ChkDevTiling.IsChecked == true);
         }
 
-        private void Supersampling_Changed(object sender, RoutedEventArgs e)
+        private void DirectRaster_Changed(object sender, RoutedEventArgs e)
         {
             if (!IsLoaded) return;
-            _mainWindow.SetDevSupersampling(ChkDevSupersampling.IsChecked == true);
+            _mainWindow.SetDevDirectRaster(ChkDevDirectRaster.IsChecked == true);
         }
 
         private void Composition_Changed(object sender, RoutedEventArgs e)

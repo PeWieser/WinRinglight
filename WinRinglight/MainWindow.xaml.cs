@@ -616,7 +616,7 @@ namespace WinRinglight
         public bool DevCacheElements { get; private set; }
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
-        public bool DevSupersampling { get; private set; }
+        public bool DevDirectRaster { get; private set; }
         public bool DevTiling { get; private set; } = true;
         private CompositionScene? _compositionBackend;
         private CaretTracker? _caretTracker;
@@ -689,7 +689,7 @@ namespace WinRinglight
                     return;
                 }
                 _compositionBackend = new CompositionScene();
-                _compositionBackend.SetSupersampling(DevSupersampling);
+                _compositionBackend.SetDirectRaster(DevDirectRaster);
                 _compositionBackend.SetTiling(DevTiling);
                 ConfigureCompositionScene();
                 _compositionBackend.UpdateTextCutout(_caretPosition, _textSelection);
@@ -708,13 +708,13 @@ namespace WinRinglight
             catch (Exception ex) { FailComposition(ex); }
         }
 
-        public void SetDevSupersampling(bool enabled)
+        public void SetDevDirectRaster(bool enabled)
         {
-            DevSupersampling = enabled;
+            DevDirectRaster = enabled;
             if (_compositionBackend == null) return;
             try
             {
-                _compositionBackend.SetSupersampling(enabled);
+                _compositionBackend.SetDirectRaster(enabled);
                 ConfigureCompositionScene();
             }
             catch (Exception ex) { FailComposition(ex); }

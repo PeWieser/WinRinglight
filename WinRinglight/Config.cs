@@ -105,9 +105,9 @@ namespace WinRinglight
                 { "de", "Composition: Cursor-Maske in Kacheln aufteilen (experimentell)" },
                 { "en", "Composition: tile cursor mask (experimental)" }
             }},
-            { "DevSupersampling", new Dictionary<string, string> {
-                { "de", "Composition: höhere Ringauflösung testen (mehr GPU-Speicher möglich)" },
-                { "en", "Composition: test higher ring resolution (may use more GPU memory)" }
+            { "DevDirectRaster", new Dictionary<string, string> {
+                { "de", "Composition: Direct2D-2×-Kurvenglättung testen (experimentell, mehr GPU-Speicher)" },
+                { "en", "Composition: test Direct2D 2x curve smoothing (experimental, more GPU memory)" }
             }},
             { "DevTitle", new Dictionary<string, string> {
                 { "de", "Temporäre Rendering-Experimente" }, { "en", "Temporary rendering experiments" }

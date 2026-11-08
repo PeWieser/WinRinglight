@@ -28,12 +28,21 @@ internal sealed class CompositionBackend : IDisposable
     private ContainerVisual? _tileRoot;
     private readonly List<MaskTile> _tiles = new();
     private DispatcherTimer? _tileSettleTimer;
+    private DispatcherTimer? _rasterTimer;
+    private Direct2DRingRaster? _directRaster;
+    private CompositionVisualSurface? _ringVectorSurface;
+    private CompositionDrawingSurface? _ringRasterSurface;
+    private bool _directRasterActive;
+    private bool _directRasterFailed;
+    private const int RasterPadding = 2;
     private sealed class MaskTile
     {
         public required System.Drawing.Rectangle Bounds;
         public required SpriteVisual Visual;
         public required CompositionRadialGradientBrush Gradient;
         public required CompositionSurfaceBrush RingBrush;
+        public required CompositionVisualSurface VectorSurface;
+        public CompositionDrawingSurface? RasterSurface;
         public required CompositionMaskBrush MaskBrush;
         public bool MaskApplied;
         public ExtraMask? CaretMask;
@@ -74,6 +83,12 @@ internal sealed class CompositionBackend : IDisposable
     public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
         double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale = null,
         bool extendLeft = false, bool extendRight = false, float? sampleScaleOverride = null, bool tiled = false)
+        : this(bounds, ringBounds, thickness, rounded, kelvin, excludeCapture, visible, cursorRadius, sharedDpiScale,
+            extendLeft, extendRight, sampleScaleOverride, tiled, false) { }
+
+    public CompositionBackend(System.Drawing.Rectangle bounds, System.Drawing.Rectangle ringBounds, float thickness, bool rounded,
+        double kelvin, bool excludeCapture, bool visible, float cursorRadius, float? sharedDpiScale,
+        bool extendLeft, bool extendRight, float? sampleScaleOverride, bool tiled, bool directRaster)
     {
         _left = bounds.Left; _top = bounds.Top; _width = bounds.Width; _height = bounds.Height;
         _ringBounds = ringBounds;
@@ -115,6 +130,7 @@ internal sealed class CompositionBackend : IDisposable
             else
             {
                 var ringSurface = Keep(_compositor.CreateVisualSurface());
+                _ringVectorSurface = ringSurface;
                 ringSurface.SourceVisual = _ring;
                 ringSurface.SourceSize = size * _rasterScale;
                 _ringBrush = Keep(_compositor.CreateSurfaceBrush(ringSurface));
@@ -144,6 +160,26 @@ internal sealed class CompositionBackend : IDisposable
                 _maskApplied = true;
                 _result.Opacity = visible ? 1 : 0;
                 _target.Root = _result;
+            }
+            if (directRaster)
+            {
+                // Whole-monitor surfaces are capped; tiled surfaces remain small.
+                if (!tiled && Math.Max(_width, _height) + 2 * RasterPadding > 2048)
+                    throw new InvalidOperationException("Direct2D high-resolution whole-monitor surface exceeds the 4096-pixel limit; enable tiling.");
+                _directRaster = new Direct2DRingRaster(_compositor);
+                _rasterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+                _rasterTimer.Tick += (_, _) =>
+                {
+                    _rasterTimer?.Stop();
+                    try { RefreshTileVisibility(); RefreshDirectRaster(); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Trace.WriteLine("Direct2D raster failed; retaining Composition vector renderer: " + ex);
+                        RestoreVectorSurfaces();
+                        _directRasterFailed = true;
+                    }
+                };
+                RefreshDirectRaster();
             }
             UpdateCursor();
             ShowWindow(_hwnd, 4); // SW_SHOWNOACTIVATE
@@ -195,7 +231,7 @@ internal sealed class CompositionBackend : IDisposable
             visual.Brush = ringBrush;
             _tileRoot.Children.InsertAtTop(visual);
             _tiles.Add(new MaskTile { Bounds = new System.Drawing.Rectangle(_left + x, _top + y, width, height),
-                Visual = visual, Gradient = gradient, RingBrush = ringBrush, MaskBrush = composite });
+                Visual = visual, Gradient = gradient, RingBrush = ringBrush, VectorSurface = ringSurface, MaskBrush = composite });
         }
         _tileSettleTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         _tileSettleTimer.Tick += (_, _) => { _tileSettleTimer?.Stop(); RefreshTileVisibility(); };
@@ -246,6 +282,83 @@ internal sealed class CompositionBackend : IDisposable
             bool isVisible = !outside && !insideHole;
             tile.Visual.IsVisible = isVisible;
             if (isVisible) UpdateTileCursor(tile, _lastX, _lastY);
+        }
+    }
+
+    // Restore the live, compositor-animated vector before any geometry/color
+    // change. Never redraw in cursor/caret callbacks. The settle timer switches
+    // back only after the last update and after the 400 ms geometry animation.
+    private void ScheduleDirectRaster()
+    {
+        if (_directRaster == null || _directRasterFailed) return;
+        RestoreVectorSurfaces();
+        _rasterTimer?.Stop();
+        _rasterTimer?.Start();
+    }
+
+    private static void ConfigureVectorBrush(CompositionSurfaceBrush brush, CompositionVisualSurface surface)
+    {
+        brush.Surface = surface;
+        brush.Stretch = CompositionStretch.Fill;
+        brush.Scale = Vector2.One;
+        brush.Offset = Vector2.Zero;
+    }
+
+    private static void ConfigureRasterBrush(CompositionSurfaceBrush brush, CompositionDrawingSurface surface)
+    {
+        brush.Surface = surface;
+        brush.Stretch = CompositionStretch.None;
+        brush.Scale = new Vector2(0.5f);
+        brush.Offset = new Vector2(-RasterPadding);
+    }
+
+    private void RestoreVectorSurfaces()
+    {
+        if (_ringBrush != null && _ringVectorSurface != null) ConfigureVectorBrush(_ringBrush, _ringVectorSurface);
+        foreach (var tile in _tiles) ConfigureVectorBrush(tile.RingBrush, tile.VectorSurface);
+        _directRasterActive = false;
+        _ringRasterSurface?.Dispose(); _ringRasterSurface = null;
+        foreach (var tile in _tiles) { tile.RasterSurface?.Dispose(); tile.RasterSurface = null; }
+    }
+
+    private void RefreshDirectRaster()
+    {
+        if (_directRaster == null || _geometry == null || _coreBrush == null || _directRasterFailed) return;
+        // Compute target geometry from the layout, not animated property reads.
+        // Layout changes intentionally preserve the current corner radius.
+        float thickness = (float)_currentThickness;
+        float radius = _geometry.CornerRadius.X / _rasterScale;
+        float inset = _currentRounded ? 20 * _dpiScale : 0;
+        float extension = radius + inset + thickness + 50 * _dpiScale;
+        float extraLeft = _extendLeft ? extension + Math.Max(0, _ringBounds.Left - _left) : 0;
+        float extraRight = _extendRight ? extension + Math.Max(0, _left + _width - _ringBounds.Right) : 0;
+        float left = _ringBounds.Left - _left + inset + thickness / 2 - extraLeft;
+        float top = _ringBounds.Top - _top + inset + thickness / 2;
+        float width = Math.Max(0, _ringBounds.Width + extraLeft + extraRight - inset * 2 - thickness);
+        float height = Math.Max(0, _ringBounds.Height - inset * 2 - thickness);
+        var color = _coreBrush.Color;
+        CompositionDrawingSurface Draw(int x, int y, int w, int h) => _directRaster.Draw(
+            w + 2 * RasterPadding, h + 2 * RasterPadding, 2, x - RasterPadding, y - RasterPadding,
+            left, top, left + width, top + height, radius, thickness, _dpiScale, color);
+        // Draw all replacements first. Failure leaves every brush on its
+        // existing vector surface, rather than a partially updated ring.
+        var created = new List<(MaskTile Tile, CompositionDrawingSurface Surface)>();
+        CompositionDrawingSurface? full = null;
+        try
+        {
+            if (_ringBrush != null) full = Draw(0, 0, _width, _height);
+            foreach (var tile in _tiles)
+                if (tile.Visual.IsVisible)
+                    created.Add((tile, Draw(tile.Bounds.Left - _left, tile.Bounds.Top - _top, tile.Bounds.Width, tile.Bounds.Height)));
+            if (full != null) { ConfigureRasterBrush(_ringBrush!, full); _ringRasterSurface = full; full = null; }
+            foreach (var item in created) { ConfigureRasterBrush(item.Tile.RingBrush, item.Surface); item.Tile.RasterSurface = item.Surface; }
+            created.Clear();
+            _directRasterActive = true;
+        }
+        finally
+        {
+            full?.Dispose();
+            foreach (var item in created) item.Surface.Dispose();
         }
     }
 
@@ -334,6 +447,8 @@ internal sealed class CompositionBackend : IDisposable
         thickness *= _dpiScale;
         if (_coreBrush != null && _currentThickness == thickness)
         {
+            bool changed = _currentRounded != rounded || !_coreBrush.Color.Equals(ToColor(kelvin));
+            if (changed) ScheduleDirectRaster();
             if (_currentRounded != rounded && _geometry != null)
             {
                 _currentRounded = rounded;
@@ -344,6 +459,7 @@ internal sealed class CompositionBackend : IDisposable
             UpdateColor(kelvin);
             return;
         }
+        ScheduleDirectRaster();
         _ring.Shapes.Clear();
         _haloBrushes.Clear();
         _coreBrush = null;
@@ -440,6 +556,7 @@ internal sealed class CompositionBackend : IDisposable
     public void SetLayout(System.Drawing.Rectangle ringBounds, bool animate)
     {
         if (_ringBounds == ringBounds) return;
+        ScheduleDirectRaster();
         _ringBounds = ringBounds;
         if (_geometry != null)
         {
@@ -553,6 +670,10 @@ internal sealed class CompositionBackend : IDisposable
         {
             _tileSettleTimer?.Stop();
             _tileSettleTimer = null;
+            _rasterTimer?.Stop();
+            _rasterTimer = null;
+            try { RestoreVectorSurfaces(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
+            _directRaster?.Dispose(); _directRaster = null;
             _tiles.Clear();
             _tileRoot = null;
             if (_target != null)
