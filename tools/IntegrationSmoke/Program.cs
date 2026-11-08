@@ -1133,6 +1133,7 @@ internal static class Program
             var d2dErrors = new double[2]; uint[]? d2dNative = null; int d2dChanged = 0;
             for (int scale = 1; scale <= 2; scale++)
             {
+                Console.WriteLine($"PARTIAL: Starting Direct2D {scale}x probe.");
                 object d2dBackend = Activator.CreateInstance(backendType, new object?[] { bounds, bounds, 30f, true, 4000d,
                     false, true, 2f, null, false, false, 1f, false })!;
                 try
@@ -1140,6 +1141,7 @@ internal static class Program
                     var compositor = (Windows.UI.Composition.Compositor)backendType.GetField("_compositor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
                     var resultVisual = (Windows.UI.Composition.SpriteVisual)backendType.GetField("_result", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(d2dBackend)!;
                     using var d2d = new Direct2DRasterProbe(compositor, width, height, scale);
+                    Console.WriteLine($"PARTIAL: Direct2D {scale}x surface drawn.");
                     using var brush2 = compositor.CreateSurfaceBrush(d2d.Surface);
                     brush2.Stretch = Windows.UI.Composition.CompositionStretch.Fill;
                     brush2.BitmapInterpolationMode = Windows.UI.Composition.CompositionBitmapInterpolationMode.Linear;
@@ -1167,6 +1169,7 @@ internal static class Program
                                 count += 3;
                             }
                         d2dErrors[scale - 1] = (double)delta / count;
+                        Console.WriteLine($"PARTIAL: Direct2D {scale}x pixels sampled.");
                     }
                     finally { ReleaseDC(IntPtr.Zero, dc2); }
                 }
