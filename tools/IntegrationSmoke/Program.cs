@@ -1233,6 +1233,23 @@ internal static class Program
             if (Math.Abs(integratedRasterError[0] - d2dErrors[1]) > 0.1 || Math.Abs(integratedRasterError[1] - d2dErrors[1]) > 0.1)
                 throw new Exception($"Integrated Direct2D raster disagrees with reference: whole={integratedRasterError[0]:F4}, tiled={integratedRasterError[1]:F4}, prototype={d2dErrors[1]:F4}.");
             Console.WriteLine($"PASS: Integrated Direct2D raster matches prototype: whole={integratedRasterError[0]:F4}, tiled={integratedRasterError[1]:F4}, prototype={d2dErrors[1]:F4}.");
+            // Oversized whole-monitor textures deliberately exercise the
+            // startup fallback without needing a real GPU failure.
+            Type sceneType = typeof(MainWindow).Assembly.GetType("WinRinglight.CompositionScene")!;
+            object fallbackScene = Activator.CreateInstance(sceneType)!;
+            try
+            {
+                sceneType.GetMethod("SetTiling")!.Invoke(fallbackScene, new object[] { false });
+                sceneType.GetMethod("SetDirectRaster")!.Invoke(fallbackScene, new object[] { true });
+                var large = new System.Drawing.Rectangle(bounds.Left, bounds.Top, 2050, 200);
+                sceneType.GetMethod("Configure")!.Invoke(fallbackScene, new object[] {
+                    new[] { new CompositionLayout.Piece(large, large) }, 25f, 30f, true, 4000d, false, true });
+                if (sceneType.GetProperty("RasterFallbackReason")!.GetValue(fallbackScene) is not string reason || !reason.Contains("4096"))
+                    throw new Exception("Oversized Direct2D initialization did not report vector fallback.");
+                Console.WriteLine("PASS: Oversized non-tiled Direct2D surface falls back to vector Composition.");
+            }
+            finally { ((IDisposable)fallbackScene).Dispose(); }
+
             Console.WriteLine($"PARTIAL: Direct2D pixel-backed probe vs WPF: D2D 1x={d2dErrors[0]:F6}, D2D 2x={d2dErrors[1]:F6}, Composition={errors[0]:F6}, 1x/2x changed={d2dChanged}; quality and GPU effect require further assessment.");
             // A separate geometry reference avoids treating WPF's differing glow/edge
             // contours as ground truth. Integrate ideal pixel coverage on a 32x32 grid.
