@@ -80,11 +80,12 @@ internal sealed unsafe class Direct2DRasterProbe : IDisposable
                         finally { if (factory != IntPtr.Zero) Marshal.Release(factory); }
                         var create = (delegate* unmanaged[Stdcall]<IntPtr, ColorF*, IntPtr, IntPtr*, int>)vt[8];
                         var draw = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, float, IntPtr, void>)vt[22];
+                        IntPtr drawContext = dc;
                         void DrawPaths(float width, float alpha, params int[] indices)
                         {
                             ColorF color = new(1, 1, 1, alpha); IntPtr brush = IntPtr.Zero;
-                            Marshal.ThrowExceptionForHR(create(dc, &color, IntPtr.Zero, &brush));
-                            try { foreach (int index in indices) draw(dc, paths[index], brush, width, IntPtr.Zero); }
+                            Marshal.ThrowExceptionForHR(create(drawContext, &color, IntPtr.Zero, &brush));
+                            try { foreach (int index in indices) draw(drawContext, paths[index], brush, width, IntPtr.Zero); }
                             finally { if (brush != IntPtr.Zero) Marshal.Release(brush); }
                         }
                         try
