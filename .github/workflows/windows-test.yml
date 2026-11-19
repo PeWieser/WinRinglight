@@ -4,6 +4,11 @@ on:
   push:
     branches: [ 'arena/feece2ba-winringlight' ]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the tested 1.3.0 release after all checks pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -140,3 +145,23 @@ jobs:
           name: WinRinglight-Composition-Prototype-win-x64
           path: publish/composition-win-x64/
           if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    needs: [build, composition-prototype]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: WinRinglight-1.3.0-release-x64
+          path: release
+      - name: Publish release from tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f release/WinRinglight.exe
+          test -f release/WinRinglight-1.3.0-x64-unsigned.msix
+          gh release create v1.3.0 release/WinRinglight.exe release/WinRinglight-1.3.0-x64-unsigned.msix --target "$GITHUB_SHA" --title "WinRinglight 1.3.0" --notes-file docs/RELEASE-1.3.0.md
