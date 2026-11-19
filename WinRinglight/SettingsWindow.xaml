@@ -167,8 +167,8 @@
                             <TextBlock x:Name="LblTheme" Text="Visuelles Design" FontWeight="Bold" Margin="0,0,0,10"/>
                             <ComboBox x:Name="ComboStyle" SelectionChanged="ComboStyle_SelectionChanged" 
                                       Background="#3D3D3D" Foreground="White" BorderBrush="#555" Padding="5">
-                                <ComboBoxItem Content="Squircle Style"/>
-                                <ComboBoxItem Content="Windows Style "/>
+                                <ComboBoxItem x:Name="StyleSquircle" Content="Squircle Style"/>
+                                <ComboBoxItem x:Name="StyleWindows" Content="Windows Style"/>
                             </ComboBox>
                             <CheckBox x:Name="ChkTextCaret" Margin="0,14,0,0" Foreground="White" Checked="TextCaret_Changed" Unchecked="TextCaret_Changed"><TextBlock x:Name="LblTextCaret" TextWrapping="Wrap"/></CheckBox>
                         </StackPanel>
@@ -298,7 +298,7 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Text="Author:" Foreground="#888" Margin="0,0,10,5"/>
+                                <TextBlock x:Name="LblAuthor" Text="Author:" Foreground="#888" Margin="0,0,10,5"/>
                                 <TextBlock Text="Melo" Grid.Column="1" FontWeight="SemiBold" Margin="0,0,0,5"/>
 
                                 <TextBlock Text="Version:" Grid.Row="1" Foreground="#888" Margin="0,0,10,5"/>

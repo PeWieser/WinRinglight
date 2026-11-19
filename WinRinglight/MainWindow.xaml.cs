@@ -200,7 +200,7 @@ namespace WinRinglight
 
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
 
-            var toggleItem = new System.Windows.Forms.ToolStripMenuItem("Toggle ringlight");
+            var toggleItem = new System.Windows.Forms.ToolStripMenuItem(Config.GetText("ToggleRinglight"));
             toggleItem.Click += (s, e) => { ToggleRinglight(); };
             contextMenu.Items.Add(toggleItem);
 

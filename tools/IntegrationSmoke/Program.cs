@@ -160,6 +160,7 @@ internal static class Program
             window.SetCompositionExperiment(true);
             if (!window.DevCompositionActive) throw new Exception("Composition reactivation failed: " + window.DevCompositionStatus);
             TestSettings(window);
+            TestLocalization(window);
             TestLayouts(window, screens);
             TestFullscreenDetector(window, screens, false);
             TestFullscreenDetector(window, screens, true);
@@ -321,6 +322,38 @@ internal static class Program
             Console.WriteLine("PASS: Settings UI: automatic/manual temperature transition, slider, cursor/caret FPS and style changes.");
         }
         finally { settings.Close(); }
+    }
+
+    private static void TestLocalization(MainWindow window)
+    {
+        string savedLanguage = Config.CurrentLang;
+        try
+        {
+            foreach (var sample in new[] {
+                (language: "de", span: "Über alle Monitore spannen", monitor: "Monitor auswählen", author: "Autor:",
+                    tooltip: "Hier klicken und die gewünschte Kombination drücken", toggle: "Ringlicht ein-/ausschalten"),
+                (language: "en", span: "Span across all monitors", monitor: "Select Monitor", author: "Author:",
+                    tooltip: "Click here and press the desired shortcut", toggle: "Toggle ring light") })
+            {
+                Config.CurrentLang = sample.language;
+                var settings = new SettingsWindow(window);
+                try
+                {
+                    if (((TextBlock)settings.FindName("LblSpanAll")).Text != sample.span ||
+                        ((TextBlock)settings.FindName("LblMonitor")).Text != sample.monitor ||
+                        ((TextBlock)settings.FindName("LblAuthor")).Text != sample.author ||
+                        !Equals(((TextBox)settings.FindName("TxtHotkey")).ToolTip, sample.tooltip) ||
+                        Config.GetText("ToggleRinglight") != sample.toggle ||
+                        ((TextBlock)settings.FindName("LblDisplayOutline")).Text != Config.GetText("SpannedDisplayOutline") ||
+                        ((TextBlock)settings.FindName("LblTextCaret")).Text != Config.GetText("TextCaretCutout") ||
+                        ((TextBlock)settings.FindName("LblCursorFps")).Text != Config.GetText("CursorFps"))
+                        throw new Exception("Settings localization mismatch for " + sample.language);
+                }
+                finally { settings.Close(); }
+            }
+            Console.WriteLine("PASS: German and English settings, monitor labels, hotkey hint and tray strings.");
+        }
+        finally { Config.CurrentLang = savedLanguage; }
     }
 
     private static Windows.UI.Color GetCoreColor(MainWindow window)

@@ -59,6 +59,13 @@ namespace WinRinglight
             ChkDevElementCache.IsChecked = _mainWindow.DevCacheElements;
             ChkDevGroupCache.IsChecked = _mainWindow.DevCacheGroup;
             ChkDevNoGlow.IsChecked = _mainWindow.DevDisableGlow;
+            LblMonitor.Text = Config.GetText("SelectMonitor");
+            LblSpanAll.Text = Config.GetText("SpanAll");
+            LblAboutTitle.Text = Config.GetText("SystemInfo");
+            LblAuthor.Text = Config.GetText("Author") + ":";
+            TxtHotkey.ToolTip = Config.GetText("HotkeyHint");
+            StyleSquircle.Content = Config.GetText("SquircleStyle");
+            StyleWindows.Content = Config.GetText("WindowsStyle");
             LblDisplayOutline.Text = Config.GetText("SpannedDisplayOutline");
             LblTextCaret.Text = Config.GetText("TextCaretCutout");
             ChkTextCaret.IsChecked = Config.Current.TextCaretCutout;
@@ -459,7 +466,7 @@ namespace WinRinglight
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show("Fehler beim Autostart. Bitte starte das Programm als Administrator.\n\nDetails: " + ex.Message, "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                System.Windows.MessageBox.Show(Config.GetText("AutostartError") + "\n\nDetails: " + ex.Message, Config.GetText("Error"), System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
             Config.Save();
         }

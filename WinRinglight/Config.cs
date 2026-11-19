@@ -98,6 +98,23 @@ namespace WinRinglight
         // --- Dictionary ---
         private static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>>()
         {
+            { "SpanAll", new Dictionary<string, string> {
+                { "de", "Über alle Monitore spannen" }, { "en", "Span across all monitors" }
+            }},
+            { "HotkeyHint", new Dictionary<string, string> {
+                { "de", "Hier klicken und die gewünschte Kombination drücken" },
+                { "en", "Click here and press the desired shortcut" }
+            }},
+            { "ToggleRinglight", new Dictionary<string, string> {
+                { "de", "Ringlicht ein-/ausschalten" }, { "en", "Toggle ring light" }
+            }},
+            { "AutostartError", new Dictionary<string, string> {
+                { "de", "Die Autostart-Einstellung konnte nicht geändert werden." },
+                { "en", "The startup setting could not be changed." }
+            }},
+            { "Error", new Dictionary<string, string> { { "de", "Fehler" }, { "en", "Error" } }},
+            { "SquircleStyle", new Dictionary<string, string> { { "de", "Squircle-Stil" }, { "en", "Squircle style" } }},
+            { "WindowsStyle", new Dictionary<string, string> { { "de", "Windows-Stil" }, { "en", "Windows style" } }},
             { "SpannedDisplayOutline", new Dictionary<string, string> {
                 { "de", "Tatsächliche Außenkontur der Monitore (mit Stufen)" },
                 { "en", "Follow the actual display outline (with steps)" }
