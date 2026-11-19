@@ -157,7 +157,7 @@ jobs:
           if-no-files-found: error
 
   publish-release:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && github.event.head_commit.message == 'Publish WinRinglight 1.3.0')
     needs: [build, composition-prototype]
     runs-on: ubuntu-latest
     permissions:
