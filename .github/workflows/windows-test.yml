@@ -85,7 +85,7 @@ jobs:
             exit 1
           }
       - name: Publish production x64 EXE
-        run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=true -o publish/portable
+        run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/portable
       - name: Publish production x64 MSIX layout
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=false -o publish/msix-layout
       - name: Build and inspect unsigned MSIX
@@ -114,11 +114,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           foreach ($exe in @('release/WinRinglight.exe', 'publish/msix-inspect/WinRinglight.exe')) {
-            $p = Start-Process -FilePath (Resolve-Path $exe).Path -WorkingDirectory (Split-Path (Resolve-Path $exe).Path) -PassThru
+            $err = Join-Path $env:RUNNER_TEMP 'release-start-stderr.txt'
+            $out = Join-Path $env:RUNNER_TEMP 'release-start-stdout.txt'
             try {
-              if ($p.WaitForExit(5000)) { throw "Published executable exited prematurely: $exe (exit $($p.ExitCode))." }
-            } finally {
-              if (!$p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
+              $p = Start-Process -FilePath (Resolve-Path $exe).Path -WorkingDirectory (Split-Path (Resolve-Path $exe).Path) -PassThru -RedirectStandardError $err -RedirectStandardOutput $out
+              try {
+                if ($p.WaitForExit(5000)) { throw "Published executable exited prematurely: $exe (exit $($p.ExitCode))." }
+              } finally {
+                if (!$p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
+              }
+            } catch {
+              $detail = @($_.ToString())
+              if (Test-Path $err) { $detail += Get-Content $err }
+              if (Test-Path $out) { $detail += Get-Content $out }
+              Write-Output ("::error::" + (($detail | Select-Object -Last 30) -join '%0A'))
+              exit 1
             }
           }
           Write-Output 'PASS: portable executable and unpacked MSIX executable both stayed running.'
