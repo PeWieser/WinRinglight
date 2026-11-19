@@ -18,7 +18,7 @@
 2. Run the self-contained x64 `WinRinglight.exe` (no separate .NET installation required).
 3. Configure your preferences in the Settings window (accessible via the System Tray icon).
 
-The release also includes an **unsigned x64 MSIX** for later signing or Store submission. It cannot be installed normally until it has been signed with a trusted certificate matching its publisher identity. The CI workflow builds and checks both files; Store acceptance and packaged installation require separate validation. The default renderer uses tiled Composition with 2× Direct2D smoothing, falling back to vector Composition or WPF when necessary.
+The CI workflow also produces an **unsigned x64 MSIX bundle** as a workflow artifact (not a release download) for later signing or Store submission. It cannot be installed normally until it has been signed with a trusted certificate matching its publisher identity. Store acceptance and packaged installation require separate validation. The default renderer uses tiled Composition with 2× Direct2D smoothing, falling back to vector Composition or WPF when necessary.
 
 ## Usage
 

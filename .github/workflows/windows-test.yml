@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish the tested 1.3.0 release after all checks pass
+        description: Publish the tested 1.3.1 release after all checks pass
         type: boolean
         default: false
 
@@ -101,14 +101,26 @@ jobs:
           }
           $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
           if (!$makeappx) { throw 'Windows SDK MakeAppx not found.' }
-          & $makeappx pack /d publish/msix-layout /p release/WinRinglight-1.3.0-x64-unsigned.msix /o
+          New-Item -ItemType Directory -Force publish/bundle-input, publish/bundle-output | Out-Null
+          & $makeappx pack /d publish/msix-layout /p publish/bundle-input/WinRinglight-1.3.1-x64.msix /o
           if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging failed.' }
-          & $makeappx unpack /p release/WinRinglight-1.3.0-x64-unsigned.msix /d publish/msix-inspect /o
+          & $makeappx unpack /p publish/bundle-input/WinRinglight-1.3.1-x64.msix /d publish/msix-inspect /o
           if ($LASTEXITCODE -ne 0) { throw 'MSIX verification failed.' }
           if (!(Test-Path publish/msix-inspect/WinRinglight.exe) -or (Test-Path publish/msix-inspect/AppxSignature.p7x)) { throw 'Unexpected MSIX contents or signature.' }
           [xml]$manifest = Get-Content publish/msix-inspect/AppxManifest.xml
-          if ($manifest.Package.Identity.Version -ne '1.3.0.0' -or $manifest.Package.Identity.ProcessorArchitecture -ne 'x64') { throw 'Unexpected MSIX identity.' }
-          Write-Output 'PASS: unsigned x64 MSIX contains the production executable and expected identity.'
+          if ($manifest.Package.Identity.Version -ne '1.3.1.0' -or $manifest.Package.Identity.ProcessorArchitecture -ne 'x64') { throw 'Unexpected MSIX identity.' }
+          & $makeappx bundle /d publish/bundle-input /p publish/bundle-output/WinRinglight-1.3.1-x64-unsigned.msixbundle /bv 1.3.1.0 /o
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX bundle creation failed.' }
+          & $makeappx unbundle /p publish/bundle-output/WinRinglight-1.3.1-x64-unsigned.msixbundle /d publish/bundle-inspect /o
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX bundle verification failed.' }
+          $packages = @(Get-ChildItem publish/bundle-inspect -Recurse -File -Filter *.msix)
+          if ($packages.Count -ne 1) { throw "Unexpected MSIX bundle package count: $($packages.Count)." }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path publish/bundle-output/WinRinglight-1.3.1-x64-unsigned.msixbundle).Path)
+          try {
+            if ($zip.GetEntry('AppxSignature.p7x') -or !$zip.GetEntry('AppxMetadata/AppxBundleManifest.xml')) { throw 'Unexpected bundle signature or missing bundle manifest.' }
+          } finally { $zip.Dispose() }
+          Write-Output 'PASS: unsigned x64 MSIX bundle unpacks to one production package with the expected identity.'
       - name: Smoke-test both published executables
         shell: pwsh
         run: |
@@ -132,11 +144,17 @@ jobs:
             }
           }
           Write-Output 'PASS: portable executable and unpacked MSIX executable both stayed running.'
-      - name: Upload production release files
+      - name: Upload production EXE
         uses: actions/upload-artifact@v4
         with:
-          name: WinRinglight-1.3.0-release-x64
-          path: release/
+          name: WinRinglight-1.3.1-release-x64
+          path: release/WinRinglight.exe
+          if-no-files-found: error
+      - name: Upload unsigned MSIX bundle (workflow artifact only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinRinglight-1.3.1-MSIXBundle-x64-unsigned
+          path: publish/bundle-output/WinRinglight-1.3.1-x64-unsigned.msixbundle
           if-no-files-found: error
 
   composition-prototype:
@@ -157,7 +175,7 @@ jobs:
           if-no-files-found: error
 
   publish-release:
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Publish WinRinglight 1.3.0'))
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Publish WinRinglight 1.3.1'))
     needs: [build, composition-prototype]
     runs-on: ubuntu-latest
     permissions:
@@ -166,12 +184,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: WinRinglight-1.3.0-release-x64
+          name: WinRinglight-1.3.1-release-x64
           path: release
       - name: Publish release from tested commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test -f release/WinRinglight.exe
-          test -f release/WinRinglight-1.3.0-x64-unsigned.msix
-          gh release create v1.3.0 release/WinRinglight.exe release/WinRinglight-1.3.0-x64-unsigned.msix --target "$GITHUB_SHA" --title "WinRinglight 1.3.0" --notes-file docs/RELEASE-1.3.0.md
+          gh release create v1.3.1 release/WinRinglight.exe --target "$GITHUB_SHA" --title "WinRinglight 1.3.1" --notes-file docs/RELEASE-1.3.1.md
+          assets=$(gh release view v1.3.1 --json isDraft,isPrerelease,assets --jq 'if .isDraft or .isPrerelease then "invalid" else [.assets[].name] | sort | join(",") end')
+          test "$assets" = "WinRinglight.exe"
+          gh release delete v1.3.0 --yes
