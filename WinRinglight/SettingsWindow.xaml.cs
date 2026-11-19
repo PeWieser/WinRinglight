@@ -24,6 +24,9 @@ namespace WinRinglight
         public SettingsWindow(MainWindow mainWindow)
         {
             InitializeComponent();
+#if PRODUCTION_BUILD
+            TabDev.Visibility = Visibility.Collapsed;
+#endif
             this.DataContext = this;
             _mainWindow = mainWindow;
 

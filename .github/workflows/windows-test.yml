@@ -56,13 +56,55 @@ jobs:
           if (-not $finished) { $summary += '%0AFAIL: Desktop integration smoke test timed out.' }
           Write-Output "::notice::$summary"
           if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
-      - name: Publish portable x64 app
-        run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -o publish/win-x64
-      - name: Upload Windows test version
+      - name: Clean before production configuration
+        run: dotnet clean tools/IntegrationSmoke/IntegrationSmoke.csproj --configuration Release
+      - name: Test production defaults and hidden developer controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $stdout = "$env:RUNNER_TEMP/production-out.log"
+          $stderr = "$env:RUNNER_TEMP/production-err.log"
+          $process = Start-Process dotnet -ArgumentList @('run', '--project', 'tools/IntegrationSmoke/IntegrationSmoke.csproj', '--configuration', 'Release', '-p:ProductionBuild=true', '--', '--production-smoke') -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $finished = $process.WaitForExit(90000)
+          if (-not $finished) { taskkill /PID $process.Id /T /F | Out-Null }
+          $lines = @()
+          if (Test-Path $stdout) { $lines += Get-Content $stdout }
+          if (Test-Path $stderr) { $lines += Get-Content $stderr }
+          $lines | ForEach-Object { Write-Output $_ }
+          $summary = ($lines | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
+          if (-not $finished) { $summary += '%0AFAIL: Production smoke test timed out.' }
+          Write-Output "::notice::$summary"
+          if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
+      - name: Publish production x64 EXE
+        run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=true -o publish/portable
+      - name: Publish production x64 MSIX layout
+        run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=false -o publish/msix-layout
+      - name: Build and inspect unsigned MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item publish/portable/WinRinglight.exe release/WinRinglight.exe
+          Copy-Item WinRinglight.Package/Release.appxmanifest publish/msix-layout/AppxManifest.xml
+          Copy-Item -Recurse WinRinglight.Package/Images publish/msix-layout/Images
+          foreach ($name in @('StoreLogo','Square150x150Logo','Square44x44Logo','Wide310x150Logo','SmallTile','LargeTile','SplashScreen')) {
+            Copy-Item "publish/msix-layout/Images/$name.scale-100.png" "publish/msix-layout/Images/$name.png"
+          }
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (!$makeappx) { throw 'Windows SDK MakeAppx not found.' }
+          & $makeappx pack /d publish/msix-layout /p release/WinRinglight-1.3.0-x64-unsigned.msix /o
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging failed.' }
+          & $makeappx unpack /p release/WinRinglight-1.3.0-x64-unsigned.msix /d publish/msix-inspect /o
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX verification failed.' }
+          if (!(Test-Path publish/msix-inspect/WinRinglight.exe) -or (Test-Path publish/msix-inspect/AppxSignature.p7x)) { throw 'Unexpected MSIX contents or signature.' }
+          [xml]$manifest = Get-Content publish/msix-inspect/AppxManifest.xml
+          if ($manifest.Package.Identity.Version -ne '1.3.0.0' -or $manifest.Package.Identity.ProcessorArchitecture -ne 'x64') { throw 'Unexpected MSIX identity.' }
+          Write-Output 'PASS: unsigned x64 MSIX contains the production executable and expected identity.'
+      - name: Upload production release files
         uses: actions/upload-artifact@v4
         with:
-          name: WinRinglight-test-win-x64
-          path: publish/win-x64/
+          name: WinRinglight-1.3.0-release-x64
+          path: release/
           if-no-files-found: error
 
   composition-prototype:

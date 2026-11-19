@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -9,7 +9,7 @@
   <Identity
     Name="moriel.WinRinglight"
     Publisher="CN=4F93B63A-AB2A-4EFE-AEE3-AD71062CC4AB"
-    Version="1.2.1.0" />
+    Version="1.3.0.0" />
 
   <Properties>
     <DisplayName>WinRinglight</DisplayName>

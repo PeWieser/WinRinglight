@@ -14,6 +14,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--production-smoke") return TestProduction();
         if (args.Length == 1 && args[0] == "--multiline-caret-fixture")
         {
             var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
@@ -328,6 +329,41 @@ internal static class Program
         var brush = (Windows.UI.Composition.CompositionColorBrush?)backend.GetType().GetField("_coreBrush", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)
             ?? throw new Exception("Composition color brush missing.");
         return brush.Color;
+    }
+
+    private static int TestProduction()
+    {
+        var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        MainWindow? window = null;
+        try
+        {
+            window = new MainWindow();
+            Config.Current.HideFromCapture = false;
+            Config.Current.IsSpanned = true;
+            Config.Current.SpannedDisplayOutline = true;
+            window.Show(); PumpFor(900);
+            if (!window.DevCompositionActive || !window.DevTiling || !window.DevDirectRaster)
+                throw new Exception("Production did not start the tiled 2x renderer: " + window.DevCompositionStatus);
+            object scene = GetScene(window);
+            if (!(bool)scene.GetType().GetProperty("UsingTiles")!.GetValue(scene)!)
+                throw new Exception("Production did not use tiled rendering.");
+            object backend = GetFirstBackend(window);
+            if (!(bool)backend.GetType().GetField("_directRasterActive", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)! ||
+                !(bool)backend.GetType().GetProperty("HasOutline")!.GetValue(backend)!)
+                throw new Exception("Production 2x or spanned outline is inactive.");
+            var settings = new SettingsWindow(window);
+            try
+            {
+                settings.Show(); PumpFor(200);
+                if (((FrameworkElement)settings.FindName("TabDev")).Visibility != Visibility.Collapsed)
+                    throw new Exception("Production exposes developer settings.");
+            }
+            finally { settings.Close(); }
+            Console.WriteLine("PASS: Production automatically starts tiled 2x, renders the selected outline and hides developer settings.");
+            return 0;
+        }
+        catch (Exception ex) { Console.Error.WriteLine("FAIL: Production smoke: " + ex); return 1; }
+        finally { window?.Close(); app.Shutdown(); }
     }
 
     private static void PumpFor(int milliseconds)

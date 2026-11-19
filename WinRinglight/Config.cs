@@ -10,7 +10,7 @@ namespace WinRinglight
     // NEW: Data structure for persistent settings
     public class SettingsData
     {
-        public string Version { get; } = "1.2.1";
+        public string Version { get; } = "1.3.0";
         public double Thickness { get; set; } = 60;
         public double Temperature { get; set; } = 4000;
         public bool AutoTemperature { get; set; } = false;

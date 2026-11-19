@@ -260,6 +260,12 @@ namespace WinRinglight
             _webcamTimer?.Start();
 
             ApplyCaptureAffinity();
+#if PRODUCTION_BUILD
+            // Enable the validated tiled Composition renderer and 2x raster.
+            // Its existing initialization/device failure handlers retain a
+            // vector Composition or WPF fallback on unsupported machines.
+            SetCompositionExperiment(true);
+#endif
             _fullscreenTimer?.Start();
 
             FlushMemory();
@@ -684,7 +690,11 @@ namespace WinRinglight
         public bool DevCacheElements { get; private set; }
         public bool DevCacheGroup { get; private set; }
         public bool DevDisableGlow { get; private set; }
+#if PRODUCTION_BUILD
+        public bool DevDirectRaster { get; private set; } = true;
+#else
         public bool DevDirectRaster { get; private set; }
+#endif
         public bool DevTiling { get; private set; } = true;
         private CompositionScene? _compositionBackend;
         private CaretTracker? _caretTracker;
