@@ -122,6 +122,7 @@ namespace WinRinglight
         private System.Windows.Forms.NotifyIcon? _trayIcon;
 
         private bool _isRinglightOn = false;
+        private bool _isClosing;
         private bool _lastWebcamState = false;
 
         private bool _hasCursorPosition;
@@ -224,6 +225,7 @@ namespace WinRinglight
 
         protected override void OnClosed(EventArgs e)
         {
+            _isClosing = true;
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             UnregisterHotKey(hwnd, HOTKEY_ID);
 
@@ -841,7 +843,7 @@ namespace WinRinglight
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine("Composition cleanup: " + ex); }
             if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
             UpdateWpfCaretMask();
-            if (backend != null)
+            if (backend != null && !_isClosing)
             {
                 // Re-synchronise WPF after leaving Composition: its mask and
                 // appearance were intentionally not updated while hidden.

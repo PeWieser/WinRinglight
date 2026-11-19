@@ -74,7 +74,11 @@ jobs:
           $summary = ($lines | Where-Object { $_ -match '^(PASS|PARTIAL|SKIP|FAIL):' }) -join '%0A'
           if (-not $finished) { $summary += '%0AFAIL: Production smoke test timed out.' }
           Write-Output "::notice::$summary"
-          if (-not $finished -or $process.ExitCode -ne 0) { exit 1 }
+          if (-not $finished -or $process.ExitCode -ne 0) {
+            $details = ($lines | Select-Object -Last 30) -join '%0A'
+            Write-Output "::error::Production test failed. Exit $($process.ExitCode).%0A$details"
+            exit 1
+          }
       - name: Publish production x64 EXE
         run: dotnet publish WinRinglight/WinRinglight.csproj --configuration Release --runtime win-x64 --self-contained true -p:ProductionBuild=true -p:PublishSingleFile=true -o publish/portable
       - name: Publish production x64 MSIX layout
