@@ -100,6 +100,19 @@ jobs:
           [xml]$manifest = Get-Content publish/msix-inspect/AppxManifest.xml
           if ($manifest.Package.Identity.Version -ne '1.3.0.0' -or $manifest.Package.Identity.ProcessorArchitecture -ne 'x64') { throw 'Unexpected MSIX identity.' }
           Write-Output 'PASS: unsigned x64 MSIX contains the production executable and expected identity.'
+      - name: Smoke-test both published executables
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($exe in @('release/WinRinglight.exe', 'publish/msix-inspect/WinRinglight.exe')) {
+            $p = Start-Process -FilePath (Resolve-Path $exe).Path -WorkingDirectory (Split-Path (Resolve-Path $exe).Path) -PassThru
+            try {
+              if ($p.WaitForExit(5000)) { throw "Published executable exited prematurely: $exe (exit $($p.ExitCode))." }
+            } finally {
+              if (!$p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
+            }
+          }
+          Write-Output 'PASS: portable executable and unpacked MSIX executable both stayed running.'
       - name: Upload production release files
         uses: actions/upload-artifact@v4
         with:
